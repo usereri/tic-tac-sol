@@ -13,7 +13,7 @@ import {
   getJackpotSize,
   getMakeMoveInstructionAsync,
   GameStatus,
-  type ConfigArgs,
+  type Settings,
   type Game,
 } from '../program'
 import { rpc, rpcSubscriptions, send, type Sent } from './solana'
@@ -25,14 +25,14 @@ export type { Game }
 
 /* ---------------- Reads ---------------- */
 
-let configPromise: Promise<ConfigArgs> | null = null
+let configPromise: Promise<Settings> | null = null
 export function getConfig() {
   configPromise ??= findConfigPda().then(([addr]) => fetchConfig(rpc, addr)).then((a) => a.data.args)
   return configPromise
 }
 
 export function useConfig() {
-  const [config, setConfig] = useState<ConfigArgs | null>(null)
+  const [config, setConfig] = useState<Settings | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     getConfig().then(setConfig, (e) => {
@@ -180,9 +180,8 @@ export function nextToFade(game: Game, player: number) {
   return marks.length === 3 ? marks[0] : null
 }
 
-export function canPlace(game: Game, player: number, cell: number) {
-  if (game.board[cell] !== 0) return false
-  return true
+export function canPlace(game: Game, cell: number) {
+  return game.board[cell] === 0
 }
 
 export function winningLine(board: ArrayLike<number>, player: number) {
