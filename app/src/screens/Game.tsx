@@ -50,8 +50,8 @@ export function GameScreen({ id }: { id: string }) {
   const claiming = useRef(false)
 
   useEffect(() => {
-    if (gameAddress) loadSession(gameAddress).then(setSession)
-  }, [gameAddress])
+    if (gameAddress && wallet) loadSession(gameAddress, wallet.address).then(setSession)
+  }, [gameAddress, wallet])
 
   const game = view?.game ?? null
   const me = !game || !session ? 0 : session.signer.address === game.sessionX ? X : session.signer.address === game.sessionO ? O : 0

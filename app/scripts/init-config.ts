@@ -1,5 +1,5 @@
 // Creates (or updates) the Config + Jackpot accounts. Usage:
-//   RPC_URL=http://127.0.0.1:8899 npx tsx scripts/init-config.ts [path/to/admin-keypair.json]
+//   RPC_URL=http://127.0.0.1:8899 [TURN_SLOTS=12] npx tsx scripts/init-config.ts [path/to/admin-keypair.json]
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import {
@@ -32,7 +32,7 @@ const settings: SettingsArgs = {
   stake: 50_000_000n, // 0.05 SOL
   gasDeposit: 1_000_000n, // 0.001 SOL, keeps the one-off wallet rent-exempt
   feeRefund: 5_000n, // the real base fee per signature
-  turnSlots: 12n, // ≈ 5 s
+  turnSlots: BigInt(process.env.TURN_SLOTS ?? 12), // ≈ 5 s; raise it locally for slow manual testing
   abandonSlots: 150n, // ≈ 60 s
   drainFloorBps: 1_000, // 10%
   jackpotEvery: 10,

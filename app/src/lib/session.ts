@@ -7,7 +7,7 @@ import { createKeyPairSignerFromPrivateKeyBytes, type KeyPairSigner } from '@sol
  */
 export type Session = { seed: string; signer: KeyPairSigner }
 
-const key = (game: string) => `ttsol:session:${game}`
+const key = (game: string, wallet: string) => `ttsol:session:${game}:${wallet}`
 
 function toHex(bytes: Uint8Array) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
@@ -22,16 +22,16 @@ export async function createSession(): Promise<Session> {
   return { seed, signer: await createKeyPairSignerFromPrivateKeyBytes(fromHex(seed)) }
 }
 
-export function saveSession(game: string, session: Session) {
-  localStorage.setItem(key(game), session.seed)
+export function saveSession(game: string, wallet: string, session: Session) {
+  localStorage.setItem(key(game, wallet), session.seed)
 }
 
-export async function loadSession(game: string): Promise<Session | null> {
-  const seed = localStorage.getItem(key(game))
+export async function loadSession(game: string, wallet: string): Promise<Session | null> {
+  const seed = localStorage.getItem(key(game, wallet))
   if (!seed) return null
   return { seed, signer: await createKeyPairSignerFromPrivateKeyBytes(fromHex(seed)) }
 }
 
-export function forgetSession(game: string) {
-  localStorage.removeItem(key(game))
+export function forgetSession(game: string, wallet: string) {
+  localStorage.removeItem(key(game, wallet))
 }

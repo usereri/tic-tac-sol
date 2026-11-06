@@ -16,7 +16,7 @@ export type Peer = {
 export type Direct =
   | { type: 'propose' }
   | { type: 'accept' }
-  | { type: 'offer'; tx: string; game: string; nonce: string }
+  | { type: 'offer'; tx: string; game: string; nonce: string; blockhash: string; lastValidBlockHeight: string }
   | { type: 'started'; game: string }
   | { type: 'cancel' }
 

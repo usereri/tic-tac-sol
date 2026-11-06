@@ -5,6 +5,7 @@ import {
   getCompiledTransactionMessageDecoder,
   getTransactionDecoder,
   type Address,
+  type Blockhash,
 } from '@solana/kit'
 import { Mark } from '../components/Board'
 import { Nav } from '../components/Chrome'
@@ -16,10 +17,10 @@ import { buildPartiallySigned, cosign, describeError, rpc, sendSigned, wireBase6
 import { useWallet } from '../lib/wallet'
 import { findGamePda, getStartGameInstructionAsync, TIC_TAC_SOL_PROGRAM_ADDRESS } from '../program'
 
-const SIGN_WINDOW_MS = 20_000
+const SIGN_WINDOW_MS = 30_000
 
 type Phase = 'queued' | 'matched' | 'signing' | 'waiting' | 'ready' | 'sending'
-type Offer = { tx: string; game: Address; nonce: bigint }
+type Offer = { tx: string; game: Address; nonce: bigint; blockhash: string; lastValidBlockHeight: bigint }
 
 function go(game: string) {
   location.hash = `#/game/${game}`
@@ -34,7 +35,11 @@ function checkOffer(offer: Offer, txBase64: string, session: Address, expectedGa
   if (!keys.includes(TIC_TAC_SOL_PROGRAM_ADDRESS) || !keys.includes(session) || !keys.includes(expectedGame)) {
     throw new Error('Offer does not match this match')
   }
-  return tx
+  // The wire format doesn't carry the expiry, so restore it from the offer.
+  return {
+    ...tx,
+    lifetimeConstraint: { blockhash: offer.blockhash as Blockhash, lastValidBlockHeight: offer.lastValidBlockHeight },
+  }
 }
 
 export function Play() {
@@ -96,7 +101,13 @@ export function Play() {
       matchmaker.onDirect((msg: Direct, from: Peer) => {
         if (!pairing || from.id !== pairing.opponent.id) return
         if (msg.type === 'offer' && pairing.role === 'o') {
-          setOffer({ tx: msg.tx, game: msg.game as Address, nonce: BigInt(msg.nonce) })
+          setOffer({
+            tx: msg.tx,
+            game: msg.game as Address,
+            nonce: BigInt(msg.nonce),
+            blockhash: msg.blockhash,
+            lastValidBlockHeight: BigInt(msg.lastValidBlockHeight),
+          })
           setPhase('ready')
         } else if (msg.type === 'started') {
           go(msg.game)
@@ -144,9 +155,17 @@ export function Play() {
       })
       const tx = await buildPartiallySigned(wallet.signer, [ix])
       const [game] = await findGamePda({ playerX: wallet.address, nonce })
-      saveSession(game, session)
-      setOffer({ tx: '', game, nonce })
-      matchmaker.send(pairing.opponent, { type: 'offer', tx: wireBase64(tx), game, nonce: nonce.toString() })
+      saveSession(game, wallet.address, session)
+      const { blockhash, lastValidBlockHeight } = tx.lifetimeConstraint as { blockhash: string; lastValidBlockHeight: bigint }
+      setOffer({ tx: '', game, nonce, blockhash, lastValidBlockHeight })
+      matchmaker.send(pairing.opponent, {
+        type: 'offer',
+        tx: wireBase64(tx),
+        game,
+        nonce: nonce.toString(),
+        blockhash,
+        lastValidBlockHeight: lastValidBlockHeight.toString(),
+      })
       setPhase('waiting')
     } catch (e) {
       setError(describeError(e))
@@ -162,7 +181,7 @@ export function Play() {
       const [expected] = await findGamePda({ playerX: pairing.opponent.wallet as Address, nonce: offer.nonce })
       const tx = checkOffer(offer, offer.tx, session.signer.address, expected)
       const signed = await cosign(tx, wallet.signer)
-      saveSession(offer.game, session)
+      saveSession(offer.game, wallet.address, session)
       await sendSigned(signed)
       matchmaker.send(pairing.opponent, { type: 'started', game: offer.game })
       go(offer.game)
