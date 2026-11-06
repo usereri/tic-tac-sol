@@ -44,3 +44,25 @@ anchor deploy --provider.cluster devnet
 ```
 
 The program keypair lives in `target/deploy/tic_tac_sol-keypair.json`, and `target/` is gitignored. Back the keypair up, or the program ID changes on the next deploy.
+
+## App (`app/`)
+
+Vite + React + TypeScript + Tailwind v4, `@solana/kit` with a Codama-generated client in `app/src/program`.
+
+Run it against a local surfpool:
+
+```sh
+# 1. local network; deploys the program and redeploys when target/deploy changes
+NO_DNA=1 surfpool start --no-tui --offline --watch
+
+# 2. create the config (once per fresh surfpool). TURN_SLOTS=150 gives ~60 s turns for manual testing
+cd app && npm install
+npx tsx scripts/init-config.ts            # or: TURN_SLOTS=150 npx tsx scripts/init-config.ts
+
+# 3. dev server (reads app/.env.local, see app/.env.example)
+npm run dev
+```
+
+Open http://localhost:5173 in **two tabs**, pick **Connect → Dev wallet (localnet)** in each (every tab gets its own airdropped keypair), and press **Enter queue** in both. The tabs pair through a `BroadcastChannel`, so local matchmaking only works between tabs of the same browser.
+
+After changing the program: `anchor build`, then `npm run codegen` in `app/` to regenerate the client.
