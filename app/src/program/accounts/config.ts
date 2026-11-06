@@ -7,24 +7,24 @@
  */
 
 import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type ClientWithRpc, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type GetAccountInfoApi, type GetMultipleAccountsApi, type HasAddress, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
-import { getConfigArgsDecoder, getConfigArgsEncoder, type ConfigArgs, type ConfigArgsArgs } from '../types';
+import { getSettingsDecoder, getSettingsEncoder, type Settings, type SettingsArgs } from '../types';
 
 export const CONFIG_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([155, 12, 170, 224, 30, 250, 204, 130]);
 
 export function getConfigDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(CONFIG_DISCRIMINATOR); }
 
-export type Config = { discriminator: ReadonlyUint8Array; admin: Address; args: ConfigArgs; bump: number;  };
+export type Config = { discriminator: ReadonlyUint8Array; admin: Address; args: Settings; bump: number;  };
 
-export type ConfigArgs = { admin: Address | HasAddress; args: ConfigArgsArgs; bump: number;  };
+export type ConfigArgs = { admin: Address | HasAddress; args: SettingsArgs; bump: number;  };
 
 /** Gets the encoder for {@link ConfigArgs} account data. */
 export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['admin', getAddressEncoder()], ['args', getConfigArgsEncoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['admin', getAddressEncoder()], ['args', getSettingsEncoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link Config} account data. */
 export function getConfigDecoder(): FixedSizeDecoder<Config> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['admin', getAddressDecoder()], ['args', getConfigArgsDecoder()], ['bump', getU8Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['admin', getAddressDecoder()], ['args', getSettingsDecoder()], ['bump', getU8Decoder()]]);
 }
 
 /** Gets the codec for {@link Config} account data. */
