@@ -16,11 +16,11 @@ declare_id!("9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5");
 pub mod tic_tac_sol {
     use super::*;
 
-    pub fn init_config(ctx: Context<InitConfig>, args: ConfigArgs) -> Result<()> {
+    pub fn init_config(ctx: Context<InitConfig>, args: Settings) -> Result<()> {
         crate::instructions::init_config::handle_init_config(ctx, args)
     }
 
-    pub fn update_config(ctx: Context<UpdateConfig>, args: ConfigArgs) -> Result<()> {
+    pub fn update_config(ctx: Context<UpdateConfig>, args: Settings) -> Result<()> {
         crate::instructions::init_config::handle_update_config(ctx, args)
     }
 

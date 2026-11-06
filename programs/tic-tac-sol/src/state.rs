@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{constants::*, error::ErrorCode};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
-pub struct ConfigArgs {
+pub struct Settings {
     /// Lamports each player puts into the pot.
     pub stake: u64,
     /// Lamports each player sends to their one-off session wallet (must keep it rent-exempt).
@@ -24,7 +24,7 @@ pub struct ConfigArgs {
 #[derive(InitSpace)]
 pub struct Config {
     pub admin: Pubkey,
-    pub args: ConfigArgs,
+    pub args: Settings,
     pub bump: u8,
 }
 

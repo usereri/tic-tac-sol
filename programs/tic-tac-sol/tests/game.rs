@@ -10,7 +10,7 @@ use {
     solana_signer::Signer,
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
-        accounts, instruction, ConfigArgs, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
+        accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
         GAME_SEED, JACKPOT_SEED, O, X,
     },
 };
@@ -18,8 +18,8 @@ use {
 const SOL: u64 = 1_000_000_000;
 const TX_FEE: u64 = 5_000;
 
-fn default_args() -> ConfigArgs {
-    ConfigArgs {
+fn default_args() -> Settings {
+    Settings {
         stake: 50_000_000,
         gas_deposit: 1_000_000,
         fee_refund: TX_FEE,
@@ -60,7 +60,7 @@ struct Match {
 }
 
 impl Env {
-    fn new(args: ConfigArgs) -> Self {
+    fn new(args: Settings) -> Self {
         let mut svm = LiteSVM::new();
         let bytes = include_bytes!(concat!(
             env!("CARGO_TARGET_TMPDIR"),
@@ -451,7 +451,7 @@ fn non_winning_cell(g: &Game) -> u8 {
 fn drained_game_feeds_jackpot_and_next_game_gets_it() {
     // Inflate the refund so fees can burn the pot within a few moves:
     // 0.1 SOL pot, 0.0095 per move -> below the 10% floor on move 10.
-    let mut env = Env::new(ConfigArgs {
+    let mut env = Env::new(Settings {
         fee_refund: 9_500_000,
         jackpot_every: 1,
         ..default_args()
@@ -489,7 +489,7 @@ fn only_admin_updates_config() {
     let mut env = Env::new(default_args());
     let stranger = Keypair::new();
     env.svm.airdrop(&stranger.pubkey(), SOL).unwrap();
-    let new_args = ConfigArgs {
+    let new_args = Settings {
         turn_slots: 15,
         ..default_args()
     };
@@ -513,7 +513,7 @@ fn only_admin_updates_config() {
 
     let bad = env.ix(
         instruction::UpdateConfig {
-            args: ConfigArgs {
+            args: Settings {
                 gas_deposit: 1,
                 ..default_args()
             },

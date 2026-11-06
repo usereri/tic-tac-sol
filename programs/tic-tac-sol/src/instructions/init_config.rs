@@ -20,7 +20,7 @@ pub struct UpdateConfig<'info> {
     pub config: Account<'info, Config>,
 }
 
-pub fn validate(args: &ConfigArgs) -> Result<()> {
+pub fn validate(args: &Settings) -> Result<()> {
     let min_wallet = Rent::get()?.minimum_balance(0);
     require!(args.stake > 0, ErrorCode::InvalidConfig);
     require!(args.gas_deposit >= min_wallet, ErrorCode::InvalidConfig);
@@ -34,7 +34,7 @@ pub fn validate(args: &ConfigArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_init_config(ctx: Context<InitConfig>, args: ConfigArgs) -> Result<()> {
+pub fn handle_init_config(ctx: Context<InitConfig>, args: Settings) -> Result<()> {
     validate(&args)?;
     ctx.accounts.config.set_inner(Config {
         admin: ctx.accounts.admin.key(),
@@ -49,7 +49,7 @@ pub fn handle_init_config(ctx: Context<InitConfig>, args: ConfigArgs) -> Result<
     Ok(())
 }
 
-pub fn handle_update_config(ctx: Context<UpdateConfig>, args: ConfigArgs) -> Result<()> {
+pub fn handle_update_config(ctx: Context<UpdateConfig>, args: Settings) -> Result<()> {
     validate(&args)?;
     ctx.accounts.config.args = args;
     Ok(())
