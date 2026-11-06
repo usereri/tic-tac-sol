@@ -31,7 +31,8 @@ type BoardProps = {
   leaving?: number | null
   win?: number[] | null
   banner?: string
-  pending?: number | null
+  /** Optimistic mark while the move confirms. */
+  pending?: { cell: number; player: number } | null
   coords?: boolean
   canPlay?: (cell: number) => boolean
   onPlay?: (cell: number) => void
@@ -42,7 +43,7 @@ export function Board({ board, fading, leaving, win, banner, pending, coords = t
   return (
     <div className={`board ${className}`} role="grid" aria-label="Board">
       {COORDS.map((coord, i) => {
-        const player = pending === i ? 1 : board[i]
+        const player = pending?.cell === i ? pending.player : board[i]
         const playable = !!onPlay && !!canPlay?.(i)
         const classes = [
           'cell',
@@ -50,7 +51,7 @@ export function Board({ board, fading, leaving, win, banner, pending, coords = t
           fading === i && 'fading',
           leaving === i && 'leaving',
           win?.includes(i) && 'win',
-          pending === i && 'pending',
+          pending?.cell === i && 'pending',
         ].filter(Boolean).join(' ')
         const label = `${coord}: ${player === 1 ? 'X' : player === 2 ? 'O' : 'empty'}${fading === i ? ', fades next' : ''}`
         return (
