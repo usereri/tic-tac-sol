@@ -9,6 +9,9 @@ skip-lint = false
 [programs.localnet]
 tic_tac_sol = "9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5"
 
+[programs.devnet]
+tic_tac_sol = "9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
