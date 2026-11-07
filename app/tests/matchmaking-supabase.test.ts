@@ -41,8 +41,9 @@ vi.mock('@supabase/supabase-js', () => ({
 
 const { SupabaseTransport } = await import('../src/lib/matchmaking-supabase')
 
-const peer = (id: string, joinedAt = 1): Peer => ({ id, wallet: `w${id}`, session: `s${id}`, joinedAt })
-const env = (to: string, from = peer('b')): Envelope => ({ to, from, payload: { type: 'cancel' } })
+const peer = (id: string, joinedAt = 1): Peer => ({ id, wallet: `w${id}`, session: id, stake: '1000', joinedAt })
+const entry = (id: string, hb: number, joinedAt = 1) => ({ ...peer(id, joinedAt), hb })
+const env = (to: string): Envelope => ({ to, body: '{}', sig: 'sig' })
 const last = () => channels[channels.length - 1]
 
 let events: { peers: Mock<() => void>; direct: Mock<(msg: Envelope) => void> }
@@ -64,7 +65,7 @@ describe('SupabaseTransport', () => {
     t.track(peer('a'))
     expect(last().track).not.toHaveBeenCalled()
     last().status('SUBSCRIBED')
-    expect(last().track).toHaveBeenCalledWith(peer('a'))
+    expect(last().track).toHaveBeenCalledWith(entry('a', 1))
   })
 
   it('tracks and untracks directly once subscribed', () => {
@@ -112,9 +113,18 @@ describe('SupabaseTransport', () => {
   it('peers() is empty until subscribed and ignores malformed entries', () => {
     const c = last()
     c.presence = {
-      k1: [{ ...peer('a'), presence_ref: 'r' }, { id: 1 }, null, { id: 'q', wallet: 'w', session: 's' }],
-      k2: [peer('b', 2)],
+      k1: [
+        entry('a', 1),
+        { id: 1 },
+        null,
+        { ...peer('q'), hb: 1, stake: undefined },
+        { ...peer('r') }, // no hb
+        { ...peer('s'), hb: '1' },
+        { ...peer('t'), hb: 1, stake: 5 },
+      ],
+      k2: [entry('b', 1, 2)],
     }
+    c.handlers['presence:sync']({})
     expect(t.peers()).toEqual([])
     c.status('SUBSCRIBED')
     expect(t.peers()).toEqual([peer('a'), peer('b', 2)])
@@ -134,7 +144,7 @@ describe('SupabaseTransport', () => {
     const good = env('a')
     on({ payload: good })
     expect(events.direct).toHaveBeenCalledWith(good)
-    for (const bad of [null, {}, { to: 'a' }, { to: 'a', from: { id: 'b' }, payload: { type: 'cancel' } }, { to: 'a', from: peer('b'), payload: {} }, { to: 1, from: peer('b'), payload: { type: 'x' } }]) {
+    for (const bad of [null, {}, { to: 'a' }, { to: 'a', body: 'b' }, { to: 'a', sig: 's' }, { to: 1, body: 'b', sig: 's' }, { to: 'a', body: 5, sig: 's' }, { to: 'a', body: 'b', sig: null }]) {
       on({ payload: bad })
     }
     expect(events.direct).toHaveBeenCalledTimes(1)
@@ -149,7 +159,7 @@ describe('SupabaseTransport', () => {
     vi.advanceTimersByTime(1)
     expect(channels).toHaveLength(2)
     channels[1].status('SUBSCRIBED')
-    expect(channels[1].track).toHaveBeenCalledWith(peer('a'))
+    expect(channels[1].track).toHaveBeenCalledWith(entry('a', 1))
   })
 
   it('ignores status callbacks from a replaced channel', () => {
@@ -180,5 +190,107 @@ describe('SupabaseTransport', () => {
     last().status('CHANNEL_ERROR', new Error('boom'))
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
+  })
+
+  describe('heartbeat', () => {
+    const present = (...entries: object[]) => {
+      last().presence = { k: entries }
+      last().handlers['presence:sync']({})
+    }
+
+    it('publishes hb with track() and bumps it every 5 s', () => {
+      last().status('SUBSCRIBED')
+      t.track(peer('a'))
+      expect(last().track).toHaveBeenLastCalledWith(entry('a', 1))
+      vi.advanceTimersByTime(5000)
+      expect(last().track).toHaveBeenLastCalledWith(entry('a', 2))
+      vi.advanceTimersByTime(5000)
+      expect(last().track).toHaveBeenLastCalledWith(entry('a', 3))
+      expect(last().track).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not publish while not tracking or not subscribed', () => {
+      vi.advanceTimersByTime(10_000)
+      t.track(peer('a'))
+      vi.advanceTimersByTime(10_000)
+      expect(last().track).not.toHaveBeenCalled()
+      last().status('SUBSCRIBED')
+      t.track(null)
+      vi.advanceTimersByTime(10_000)
+      expect(last().track).toHaveBeenCalledTimes(1) // only the SUBSCRIBED publish before track(null)
+      expect(last().untrack).toHaveBeenCalledTimes(1)
+    })
+
+    it('stops publishing after close()', () => {
+      last().status('SUBSCRIBED')
+      t.track(peer('a'))
+      t.close()
+      last().track.mockClear()
+      vi.advanceTimersByTime(20_000)
+      expect(last().track).not.toHaveBeenCalled()
+    })
+
+    it('drops an entry whose hb stops growing for over 15 s', () => {
+      last().status('SUBSCRIBED')
+      present(entry('a', 1))
+      expect(t.peers()).toEqual([peer('a')])
+      vi.advanceTimersByTime(15_000)
+      expect(t.peers()).toEqual([peer('a')])
+      vi.advanceTimersByTime(1)
+      expect(t.peers()).toEqual([])
+    })
+
+    it('keeps an entry that keeps bumping', () => {
+      last().status('SUBSCRIBED')
+      present(entry('a', 1))
+      for (let hb = 2; hb <= 6; hb++) {
+        vi.advanceTimersByTime(5000)
+        present(entry('a', hb))
+        expect(t.peers()).toEqual([peer('a')])
+      }
+    })
+
+    it('does not refresh on a lower or equal hb', () => {
+      last().status('SUBSCRIBED')
+      present(entry('a', 5))
+      vi.advanceTimersByTime(10_000)
+      present(entry('a', 5))
+      present(entry('a', 4))
+      vi.advanceTimersByTime(6000)
+      expect(t.peers()).toEqual([])
+    })
+
+    it('refreshes on a higher hb after a stale spell', () => {
+      last().status('SUBSCRIBED')
+      present(entry('a', 1))
+      vi.advanceTimersByTime(20_000)
+      expect(t.peers()).toEqual([])
+      present(entry('a', 2))
+      expect(t.peers()).toEqual([peer('a')])
+    })
+
+    it('removes ids that leave presence', () => {
+      last().status('SUBSCRIBED')
+      present(entry('a', 1), entry('b', 1))
+      expect(t.peers()).toHaveLength(2)
+      present(entry('b', 2))
+      expect(t.peers()).toEqual([peer('b')])
+      present()
+      expect(t.peers()).toEqual([])
+    })
+
+    it('strips hb from the peers it returns and tells the matchmaker on sync', () => {
+      last().status('SUBSCRIBED')
+      events.peers.mockClear()
+      present(entry('a', 1))
+      expect(events.peers).toHaveBeenCalledTimes(1)
+      expect(t.peers()[0]).not.toHaveProperty('hb')
+    })
+
+    it('ignores entries without stake or hb', () => {
+      last().status('SUBSCRIBED')
+      present({ ...peer('a'), hb: 1, stake: undefined }, { ...peer('b') }, entry('c', 1))
+      expect(t.peers()).toEqual([peer('c')])
+    })
   })
 })
