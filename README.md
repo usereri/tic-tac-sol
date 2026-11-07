@@ -1,6 +1,6 @@
 # Tic-Tac-Sol
 
-Infinite tic-tac-toe on Solana. Each player stakes 0.05 SOL, every move is an on-chain transaction, and the escrow pays every move's fee.
+Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it: 0.01–0.25 SOL in the app, config allows 0.01–1 SOL), every move is an on-chain transaction, and the escrow pays every move's fee.
 
 ## Rules
 
@@ -19,7 +19,7 @@ Infinite tic-tac-toe on Solana. Each player stakes 0.05 SOL, every move is an on
 | Instruction | Signer | Notes |
 | --- | --- | --- |
 | `init_config(args)` / `update_config(args)` | admin | Creates/tunes `Config` and creates `Jackpot` |
-| `start_game(nonce)` | both players' wallets | Atomic: both stakes in, both one-off wallets funded with `gas_deposit`, game PDA `["game", player_x, nonce]` created |
+| `start_game(nonce, stake)` | both players' wallets | Atomic: stake must be within `min_stake..=max_stake`; both stakes in, both one-off wallets funded with `gas_deposit`, game PDA `["game", player_x, nonce]` created |
 | `make_move(cell)` | one-off wallet of the player to move | Escrow pays the fee back to the signer |
 | `claim_timeout` | one-off wallet of the waiting player | Within the claim window after a missed deadline |
 | `settle_abandoned` | anyone | After the claim window, 50/50. Signer's fee is refunded |
@@ -27,7 +27,7 @@ Infinite tic-tac-toe on Solana. Each player stakes 0.05 SOL, every move is an on
 
 The pot is always the game account's lamports above its rent-exempt minimum. Events `GameStarted`, `MoveMade` and `GameEnded` carry everything the UI needs.
 
-Default config for devnet: stake `50_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `12`, abandon_slots `150`, drain_floor_bps `1_000`, jackpot_every `10`.
+Default config for devnet: min_stake `10_000_000`, max_stake `1_000_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `12`, abandon_slots `150`, drain_floor_bps `1_000`, jackpot_every `10`.
 
 ## Develop
 
@@ -97,7 +97,7 @@ Without Supabase env vars the app pairs tabs of one browser (`BroadcastChannel`)
 
 For local cross-device testing, put both variables in `app/.env.local`.
 
-Matchmaking messages are unauthenticated; the start transaction is checked by O before signing (`checkOffer` in `Play.tsx`), so a spoofed message can delay a match but can't take funds.
+Players are only matched with others who picked the same stake. Matchmaking messages are signed with each player's one-off session key, and O signs the start transaction only if it is byte-for-byte the one O expects (`checkOffer` in `Play.tsx`): its own wallet and session, the opponent's, and the chosen stake.
 
 ### Tests
 
