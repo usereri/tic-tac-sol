@@ -22,6 +22,16 @@ export function Ticker() {
   )
 }
 
+/** A clearly visible error. */
+export function Alert({ children }: { children: ReactNode }) {
+  return (
+    <div className="alert" role="alert">
+      <b aria-hidden>!</b>
+      <span>{children}</span>
+    </div>
+  )
+}
+
 export function Nav({ meta }: { meta?: ReactNode }) {
   return (
     <nav className="flex items-stretch justify-between border-b-[3px] border-ink bg-panel">

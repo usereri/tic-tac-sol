@@ -96,6 +96,6 @@ export function describeError(err: unknown): string {
   const logs = e?.context?.logs ?? (e?.cause as { context?: { logs?: string[] } })?.context?.logs
   const anchor = logs?.map((l) => /Error Message: (.*)$/.exec(l)?.[1]).find(Boolean)
   if (anchor) return anchor
-  if (/reject/i.test(e?.message ?? '')) return 'Signature request rejected in the wallet.'
+  if (/reject/i.test(e?.message ?? '')) return 'You rejected the request in your wallet. Nothing was signed or paid.'
   return e?.message ?? String(err)
 }

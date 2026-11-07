@@ -5,7 +5,7 @@ import {
   type Blockhash,
 } from '@solana/kit'
 import { Mark } from '../components/Board'
-import { Nav } from '../components/Chrome'
+import { Alert, Nav } from '../components/Chrome'
 import { sol, short } from '../lib/format'
 import { activeGameOf, useConfig } from '../lib/game'
 import { joinMessage, matchmaker, type Direct, type JoinProof, type Pairing, type Peer } from '../lib/matchmaking'
@@ -361,7 +361,7 @@ export function Play({ stake }: { stake: bigint }) {
               <span>{phase === 'signing' || phase === 'sending' ? 'Signing…' : 'Sign & stake'}</span>
               <span className="tag">{sol(stake + gas, 3)} SOL</span>
             </button>
-            <span className="label text-center">{error ?? 'Nothing is paid unless both sign'}</span>
+            {error ? <Alert>{error}</Alert> : <span className="label text-center">Nothing is paid unless both sign</span>}
             <a className="ghost" href="#/">Leave queue</a>
           </div>
         </div>

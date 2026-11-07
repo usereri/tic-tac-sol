@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Nav } from '../components/Chrome'
+import { Alert, Nav } from '../components/Chrome'
 import { short, sol } from '../lib/format'
 import { fetchLeaderboard, type LeaderRow } from '../lib/game'
 import { describeError } from '../lib/solana'
@@ -26,7 +26,7 @@ export function Leaderboard() {
         <div className="panel">
           <header><span className="label">Players</span><span className="code">{rows ? `${rows.length} wallets` : '…'}</span></header>
           <div className="body overflow-x-auto">
-            {error && <span className="chip chip-ink normal-case">{error}</span>}
+            {error && <Alert>{error}</Alert>}
             {rows && rows.length === 0 && <span className="text-ink-2">No games played yet.</span>}
             {rows && rows.length > 0 && (
               <table className="w-full border-collapse text-left text-[13px]">

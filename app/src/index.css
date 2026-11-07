@@ -90,6 +90,8 @@
   .ticker span { padding: 14px 24px; font-weight: 700; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
   .ticker span::after { content: "■"; margin-left: 48px; color: var(--color-panel); }
 
+  .alert { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: #ffb3ab; color: var(--color-ink); border: 3px solid var(--color-ink); box-shadow: 4px 4px 0 var(--color-ink); font-size: 13px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; animation: shake 0.3s ease-out; }
+  .alert b { flex: none; display: grid; place-items: center; width: 22px; height: 22px; background: var(--color-ink); color: #ffb3ab; font-family: var(--font-display); font-weight: 900; }
   .blink { animation: blink 1s steps(1) infinite; }
   .log li { display: grid; grid-template-columns: 34px 22px 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--color-ink); font-size: 12px; align-items: center; }
   .log a { color: inherit; }
@@ -108,6 +110,7 @@
 @keyframes pop { to { opacity: 1; transform: translate(-50%, -50%) rotate(-7deg) scale(1); } }
 @keyframes tick { to { transform: translateX(-50%); } }
 @keyframes blink { 50% { opacity: 0; } }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition: none !important; }

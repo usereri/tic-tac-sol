@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DemoBoard } from '../components/DemoBoard'
-import { Nav, Ticker } from '../components/Chrome'
+import { Alert, Nav, Ticker } from '../components/Chrome'
 import { sol } from '../lib/format'
 import { useConfig, useJackpot } from '../lib/game'
 import { matchmaker, type Peer } from '../lib/matchmaking'
@@ -95,7 +95,7 @@ export function Home() {
             <span>{wallet ? 'Enter queue' : 'Connect to play'}</span>
             <span className="tag">{sol(stake, 2)} SOL</span>
           </a>
-          {error && <p className="chip chip-ink m-0 normal-case">{error}</p>}
+          {error && <Alert>{error}</Alert>}
           <div className="grid grid-cols-2 gap-3">
             <div className="panel">
               <header><span className="label">Jackpot</span><span className="code">{jackpot?.drained ?? 0}/{config?.jackpotEvery ?? 10}</span></header>

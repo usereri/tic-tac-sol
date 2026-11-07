@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { address as toAddress, type Address } from '@solana/kit'
 import { Board, Mark } from '../components/Board'
-import { Nav } from '../components/Chrome'
+import { Alert, Nav } from '../components/Chrome'
 import { COORDS, short, sol } from '../lib/format'
 import {
   canPlace,
@@ -181,15 +181,15 @@ export function GameScreen({ id }: { id: string }) {
             canPlay={(c) => myTurn && !locked && pending === null && canPlace(game, c)}
             onPlay={play}
           />
-          <p className="m-0 text-center text-[13px] text-ink-2">
+          <div className="m-0 w-full max-w-[680px] text-center text-[13px] text-ink-2">
             {error
-              ? <span className="chip chip-ink normal-case">{error}</span>
+              ? <Alert>{error}</Alert>
               : me === 0
                 ? 'Spectating.'
                 : myTurn
                   ? fading !== null ? `Your oldest mark at ${COORDS[fading]} disappears when you place.` : 'Your move.'
                   : `Waiting for ${opp === X ? 'X' : 'O'}…`}
-          </p>
+          </div>
         </section>
 
         <section className="flex flex-col gap-4 lg:gap-5">
