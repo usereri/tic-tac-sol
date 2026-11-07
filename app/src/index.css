@@ -55,7 +55,7 @@
   .ghost { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; width: 100%; border: 3px solid var(--color-ink); color: var(--color-ink); background: var(--color-panel); text-decoration: none; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; cursor: pointer; }
   .ghost:hover { background: var(--color-ink); color: var(--color-signal); }
 
-  .chip { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; }
+  .chip { display: inline-block; max-width: 100%; overflow-wrap: anywhere; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; }
   .chip-on { background: var(--color-signal); color: var(--color-ink); }
   .chip-ink { background: var(--color-ink); color: var(--color-signal); }
   .chip-line { border: 2px solid var(--color-ink); }

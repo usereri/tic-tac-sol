@@ -139,7 +139,7 @@ export function GameScreen({ id }: { id: string }) {
   return (
     <div className="flex min-h-svh flex-col">
       <Nav meta={<><span>Game {short(gameAddress)}</span><span>Move {String(game.moveCount + 1).padStart(2, '0')}</span></>} />
-      <main className="grid flex-1 items-start gap-5 px-4 py-4 lg:grid-cols-[300px_minmax(0,680px)_340px] lg:justify-center lg:gap-9 lg:px-10 lg:py-6">
+      <main className="grid flex-1 grid-cols-1 items-start gap-5 px-4 py-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)_minmax(0,320px)] lg:gap-8 lg:px-8 lg:py-5">
         <section className="flex flex-col gap-4 lg:gap-5">
           <div className="panel">
             <header><span className="label">Players</span><span className="code">X moves first</span></header>
@@ -174,7 +174,7 @@ export function GameScreen({ id }: { id: string }) {
 
         <section className="flex flex-col items-center gap-3">
           <Board
-            className="w-full max-w-[680px]"
+            className="w-full max-w-[min(680px,calc(100svh-190px))]"
             board={game.board}
             fading={fading}
             pending={pending !== null ? { cell: pending, player: me } : null}
@@ -249,8 +249,8 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
   return (
     <div className="flex min-h-svh flex-col">
       <Nav meta={<><span>Game over</span></>} />
-      <main className="grid flex-1 items-start gap-6 px-4 py-6 lg:grid-cols-[460px_1fr] lg:gap-14 lg:px-12 lg:py-8">
-        <Board className="w-full max-w-[460px]" board={game.board} win={line} coords />
+      <main className="grid flex-1 grid-cols-1 items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-12 lg:px-12 lg:py-8">
+        <Board className="w-full max-w-[min(460px,calc(100svh-180px))]" board={game.board} win={line} coords />
         <section className="flex min-w-0 flex-col gap-5">
           <span className="label">{OUTCOME[game.status]} · move {String(moves).padStart(2, '0')}</span>
           <h1 className="mega text-[clamp(50px,8vw,120px)]">{headline}</h1>

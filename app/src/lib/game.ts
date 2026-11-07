@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getBase64Encoder, type Address, type KeyPairSigner, type TransactionSigner } from '@solana/kit'
+import { getBase64Encoder, isSolanaError, SOLANA_ERROR__ACCOUNTS__ACCOUNT_NOT_FOUND, type Address, type KeyPairSigner, type TransactionSigner } from '@solana/kit'
 import { getTransferSolInstruction } from '@solana-program/system'
 import {
   fetchConfig,
@@ -43,7 +43,11 @@ export function useConfig() {
   useEffect(() => {
     getConfig().then(setConfig, (e) => {
       configPromise = null
-      setError(String(e?.message ?? e))
+      setError(
+        isSolanaError(e, SOLANA_ERROR__ACCOUNTS__ACCOUNT_NOT_FOUND)
+          ? "The game isn't set up on this network yet (no config account). Run init-config for this RPC."
+          : `Can't reach the game program: ${e?.message ?? e}`,
+      )
     })
   }, [])
   return { config, error }

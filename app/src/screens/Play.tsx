@@ -307,14 +307,26 @@ export function Play({ stake }: { stake: bigint }) {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <Nav meta={<><span>Queue · FIFO · {sol(stake, 2)} SOL</span><span>{count} waiting</span></>} />
-      <main className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-12 md:py-8">
-        <span className="label">{pairing ? 'Paired first-in, first-out · nothing paid yet' : `Looking for an opponent at ${sol(stake, 2)} SOL · nothing paid yet`}</span>
-        <h1 className="mega text-[clamp(40px,7vw,96px)]">
-          {pairing ? <>Match<br /><mark>found.</mark></> : <>In the<br /><mark>queue<span className="blink">_</span></mark></>}
+      <Nav meta={<><span>Queue · FIFO · {sol(stake, 2)} SOL</span><span>{out ? 'not queued' : `${count} waiting`}</span></>} />
+      <main className="flex min-w-0 flex-1 flex-col gap-[clamp(12px,2.4svh,24px)] px-4 py-[clamp(12px,2.4svh,32px)] md:px-10">
+        <span className="label">
+          {pairing
+            ? 'Paired first-in, first-out · nothing paid yet'
+            : out
+              ? 'Not in the queue yet · nothing paid'
+              : `Looking for an opponent at ${sol(stake, 2)} SOL · nothing paid yet`}
+        </span>
+        <h1 className="mega text-[clamp(32px,min(8vw,8svh),96px)]">
+          {pairing
+            ? <>Match<br /><mark>found.</mark></>
+            : out === 'joining' || out === 'sign'
+              ? <>Sign to<br /><mark>join.</mark></>
+              : out
+                ? <>Not<br /><mark>queued.</mark></>
+                : <>In the<br /><mark>queue<span className="blink">_</span></mark></>}
         </h1>
 
-        <div className="grid items-center gap-3 md:grid-cols-[1fr_120px_1fr] md:gap-6">
+        <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,1fr)_80px_minmax(0,1fr)] md:gap-6">
           <Slab player={iAmX || !pairing ? 1 : 2} who={`You · ${pairing ? (iAmX ? 'X' : 'O') : '?'}`} address={wallet.address} note={pairing ? (iAmX ? 'moves first' : 'moves second') : 'waiting'} active />
           <span className="text-center font-display text-[22px] font-black [font-stretch:125%] md:text-[56px]">VS</span>
           {opponent
@@ -324,7 +336,7 @@ export function Play({ stake }: { stake: bigint }) {
               : <div className="panel"><header><span className="label">Opponent</span><span className="code">{count <= 1 ? 'nobody else yet' : `${count} in queue`}</span></header><div className="body"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
         </div>
 
-        <div className="grid items-start gap-5 md:grid-cols-[1fr_1fr_420px] md:gap-7">
+        <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,380px)] md:gap-6">
           <div className="panel hidden md:flex">
             <header><span className="label">Stakes</span><span className="code">one atomic tx</span></header>
             <div className="body"><div className="kv">
@@ -383,8 +395,8 @@ function Slab({ player, who, address, note, active }: { player: number; who: str
   return (
     <div className="panel" style={active ? { background: 'var(--color-signal)' } : undefined}>
       <header><span className="label text-ink">{who}</span><span className="code text-ink">{note}</span></header>
-      <div className="body flex-row items-center gap-4 md:gap-6 md:p-[22px]">
-        <span className="size-[46px] shrink-0 md:size-[110px]"><Mark player={player} /></span>
+      <div className="body flex-row items-center gap-4 py-2.5 md:gap-6 md:py-[clamp(10px,2svh,22px)]">
+        <span className="size-[40px] shrink-0 md:size-[clamp(48px,9svh,96px)]"><Mark player={player} /></span>
         <span className="num min-w-0 truncate text-[22px] md:text-[40px]">{short(address)}</span>
       </div>
     </div>
