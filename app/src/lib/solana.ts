@@ -15,6 +15,8 @@ import {
   assertIsFullySignedTransaction,
   assertIsSendableTransaction,
   assertIsTransactionWithBlockhashLifetime,
+  compileTransaction,
+  type Blockhash,
   type Instruction,
   type Signature,
   type Transaction,
@@ -42,8 +44,11 @@ export function explorerTx(signature: string) {
   return `https://explorer.solana.com/tx/${signature}?cluster=${cluster}`
 }
 
-async function buildMessage(feePayer: TransactionSigner, instructions: Instruction[]) {
-  const { value: blockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send()
+export type Lifetime = { blockhash: Blockhash; lastValidBlockHeight: bigint }
+
+/** A v0 message. Pass `lifetime` to rebuild a known message byte for byte (see Play's checkOffer). */
+export async function buildMessage(feePayer: TransactionSigner, instructions: Instruction[], lifetime?: Lifetime) {
+  const blockhash = lifetime ?? (await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send()).value
   return pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(feePayer, m),
@@ -70,6 +75,11 @@ export async function send(feePayer: TransactionSigner, instructions: Instructio
 /** Signs with whichever attached signers can sign now; the rest (noop signers) stay empty. */
 export async function buildPartiallySigned(feePayer: TransactionSigner, instructions: Instruction[]) {
   return partiallySignTransactionMessageWithSigners(await buildMessage(feePayer, instructions))
+}
+
+/** The exact bytes a wallet signs for this message. */
+export function messageBytes(message: Parameters<typeof compileTransaction>[0]) {
+  return compileTransaction(message).messageBytes
 }
 
 export async function cosign(tx: Transaction, signer: TransactionSigner) {

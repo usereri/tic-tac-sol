@@ -1,5 +1,8 @@
 import type { Envelope, Peer, Transport, TransportEvents } from '../src/lib/matchmaking-core'
 
+/** The payload type inside a signed envelope, for drop rules and assertions. */
+export const typeOf = (env: Envelope): string => JSON.parse(env.body).payload.type
+
 /** In-memory stand-in for the network: tracked peers are the queue, sends reach everyone else. */
 export class Bus {
   readonly transports = new Set<FakeTransport>()
