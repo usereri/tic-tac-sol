@@ -85,3 +85,23 @@ One-time setup:
    ```
 
 Players need Phantom (or another Wallet Standard wallet) switched to devnet; the dev wallet only exists on localnet.
+
+### Matchmaking (Supabase Realtime)
+
+Without Supabase env vars the app pairs tabs of one browser (`BroadcastChannel`). With them it pairs across devices over Supabase Realtime presence + broadcast, on channel `ttsol-queue-<cluster>`. No tables are needed.
+
+1. Create a project at https://supabase.com/dashboard (free tier is enough).
+2. Project Settings → API Keys: copy the **Project URL** → `VITE_SUPABASE_URL` and the **anon / publishable** key → `VITE_SUPABASE_ANON_KEY`. Never use the `service_role` / secret key; it would ship in the public bundle.
+3. Realtime → Settings: keep public channel access allowed (the default).
+4. Free projects pause after about a week idle; open the dashboard before a demo.
+
+For local cross-device testing, put both variables in `app/.env.local`.
+
+Matchmaking messages are unauthenticated; the start transaction is checked by O before signing (`checkOffer` in `Play.tsx`), so a spoofed message can delay a match but can't take funds.
+
+### Tests
+
+```sh
+anchor test            # program (LiteSVM)
+cd app && npm test     # matchmaking logic (vitest)
+```
