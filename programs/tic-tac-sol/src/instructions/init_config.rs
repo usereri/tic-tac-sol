@@ -10,6 +10,8 @@ pub struct InitConfig<'info> {
     pub config: Account<'info, Config>,
     #[account(init, payer = admin, space = 8 + Jackpot::INIT_SPACE, seeds = [JACKPOT_SEED], bump)]
     pub jackpot: Account<'info, Jackpot>,
+    #[account(init, payer = admin, space = 8 + Leaderboard::INIT_SPACE, seeds = [LEADERBOARD_SEED], bump)]
+    pub leaderboard: Box<Account<'info, Leaderboard>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -47,6 +49,8 @@ pub fn handle_init_config(ctx: Context<InitConfig>, args: Settings) -> Result<()
         total_paid_out: 0,
         bump: ctx.bumps.jackpot,
     });
+    ctx.accounts.leaderboard.len = 0;
+    ctx.accounts.leaderboard.bump = ctx.bumps.leaderboard;
     Ok(())
 }
 

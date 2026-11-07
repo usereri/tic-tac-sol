@@ -33,23 +33,23 @@ pub struct StartGame<'info> {
         bump
     )]
     pub game: Account<'info, Game>,
-    /// Created on a wallet's first game; each player pays for their own.
+    /// One-game locks. Each player pays their own (small) rent and gets it back when the game ends.
     #[account(
         init_if_needed,
         payer = player_x,
-        space = 8 + PlayerStats::INIT_SPACE,
-        seeds = [STATS_SEED, player_x.key().as_ref()],
+        space = 8 + ActiveGame::INIT_SPACE,
+        seeds = [ACTIVE_SEED, player_x.key().as_ref()],
         bump
     )]
-    pub stats_x: Account<'info, PlayerStats>,
+    pub active_x: Account<'info, ActiveGame>,
     #[account(
         init_if_needed,
         payer = player_o,
-        space = 8 + PlayerStats::INIT_SPACE,
-        seeds = [STATS_SEED, player_o.key().as_ref()],
+        space = 8 + ActiveGame::INIT_SPACE,
+        seeds = [ACTIVE_SEED, player_o.key().as_ref()],
         bump
     )]
-    pub stats_o: Account<'info, PlayerStats>,
+    pub active_o: Account<'info, ActiveGame>,
     pub system_program: Program<'info, System>,
 }
 
@@ -107,8 +107,10 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         .ok_or(ErrorCode::MathOverflow)?;
 
     let game_key = ctx.accounts.game.key();
-    ctx.accounts.stats_x.enter(keys[0], ctx.bumps.stats_x, game_key, stake)?;
-    ctx.accounts.stats_o.enter(keys[1], ctx.bumps.stats_o, game_key, stake)?;
+    for active in [&mut ctx.accounts.active_x, &mut ctx.accounts.active_o] {
+        require_keys_eq!(active.game, Pubkey::default(), ErrorCode::PlayerBusy);
+        active.game = game_key;
+    }
 
     let game = &mut ctx.accounts.game;
     game.set_inner(Game {

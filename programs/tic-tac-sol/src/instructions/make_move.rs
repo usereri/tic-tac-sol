@@ -19,10 +19,14 @@ pub struct PlayGame<'info> {
     pub jackpot: Account<'info, Jackpot>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
-    #[account(mut, seeds = [STATS_SEED, game.player_x.as_ref()], bump = stats_x.bump)]
-    pub stats_x: Account<'info, PlayerStats>,
-    #[account(mut, seeds = [STATS_SEED, game.player_o.as_ref()], bump = stats_o.bump)]
-    pub stats_o: Account<'info, PlayerStats>,
+    /// CHECK: X's one-game lock; closed (rent to X) when the game ends.
+    #[account(mut, seeds = [ACTIVE_SEED, game.player_x.as_ref()], bump)]
+    pub active_x: UncheckedAccount<'info>,
+    /// CHECK: O's one-game lock; closed (rent to O) when the game ends.
+    #[account(mut, seeds = [ACTIVE_SEED, game.player_o.as_ref()], bump)]
+    pub active_o: UncheckedAccount<'info>,
+    #[account(mut, seeds = [LEADERBOARD_SEED], bump = leaderboard.bump)]
+    pub leaderboard: Box<Account<'info, Leaderboard>>,
 }
 
 impl<'info> PlayGame<'info> {
@@ -47,7 +51,8 @@ impl<'info> PlayGame<'info> {
             &self.player_x.to_account_info(),
             &self.player_o.to_account_info(),
             &mut self.jackpot,
-            [&mut self.stats_x, &mut self.stats_o],
+            [&self.active_x.to_account_info(), &self.active_o.to_account_info()],
+            &mut self.leaderboard,
             status,
             winner,
         )

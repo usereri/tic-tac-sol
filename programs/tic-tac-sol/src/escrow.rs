@@ -20,6 +20,17 @@ pub fn move_lamports(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Resul
     Ok(())
 }
 
+/// Closes a program-owned account, sending all its lamports to `to`. No-op if already closed.
+pub fn close_account(info: &AccountInfo, to: &AccountInfo) -> Result<()> {
+    if info.owner != &crate::ID {
+        return Ok(());
+    }
+    move_lamports(info, to, info.lamports())?;
+    info.assign(&anchor_lang::system_program::ID);
+    info.resize(0)?;
+    Ok(())
+}
+
 /// Lamports held by a program account above its rent-exempt minimum.
 pub fn spare_lamports(info: &AccountInfo) -> Result<u64> {
     let rent = Rent::get()?.minimum_balance(info.data_len());
@@ -52,7 +63,8 @@ pub fn finish<'info>(
     player_x: &AccountInfo<'info>,
     player_o: &AccountInfo<'info>,
     jackpot: &mut Account<'info, Jackpot>,
-    [stats_x, stats_o]: [&mut Account<'info, PlayerStats>; 2],
+    [active_x, active_o]: [&AccountInfo<'info>; 2],
+    leaderboard: &mut Leaderboard,
     status: GameStatus,
     winner: u8,
 ) -> Result<()> {
@@ -75,9 +87,12 @@ pub fn finish<'info>(
     if status == GameStatus::Drained {
         jackpot.drained_count = jackpot.drained_count.saturating_add(1);
     }
-    let game_key = game.key();
-    stats_x.leave(game_key, winner == X, to_x);
-    stats_o.leave(game_key, winner == O, to_o);
+    let stake = game.stake;
+    leaderboard.record(game.player_x, stake, winner == X, to_x);
+    leaderboard.record(game.player_o, stake, winner == O, to_o);
+    // Free both wallets for their next game and give the lock rent back.
+    close_account(active_x, player_x)?;
+    close_account(active_o, player_o)?;
     game.status = status;
     game.winner = winner;
 

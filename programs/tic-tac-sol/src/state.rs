@@ -39,46 +39,70 @@ pub struct Jackpot {
     pub bump: u8,
 }
 
-/// Per-wallet record: the leaderboard, and the lock that allows one game per wallet at a time.
-/// Keyed by the player's real wallet, never the one-off session key.
+/// One-game-per-wallet lock, PDA `["active", wallet]`. Created by start_game (the player pays
+/// its rent) and closed when the game ends, so the rent goes straight back to the player.
 #[account]
 #[derive(InitSpace)]
-pub struct PlayerStats {
-    pub wallet: Pubkey,
-    /// The game this wallet is playing right now, or the default key when none.
-    pub active_game: Pubkey,
-    pub games_played: u32,
-    pub games_won: u32,
-    /// Total staked across all games.
-    pub lamports_staked: u64,
-    /// Total paid out to this wallet (wins and splits).
-    pub lamports_won: u64,
-    pub bump: u8,
+pub struct ActiveGame {
+    pub game: Pubkey,
 }
 
-impl PlayerStats {
-    /// Called by start_game for each player.
-    pub fn enter(&mut self, wallet: Pubkey, bump: u8, game: Pubkey, stake: u64) -> Result<()> {
-        if self.wallet == Pubkey::default() {
-            self.wallet = wallet;
-            self.bump = bump;
-        }
-        require_keys_eq!(self.active_game, Pubkey::default(), ErrorCode::PlayerBusy);
-        self.active_game = game;
-        self.games_played = self.games_played.saturating_add(1);
-        self.lamports_staked = self.lamports_staked.saturating_add(stake);
-        Ok(())
-    }
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq, InitSpace)]
+pub struct BoardEntry {
+    pub wallet: Pubkey,
+    pub played: u32,
+    pub won: u32,
+    pub staked: u64,
+    /// Total paid out to this wallet (wins and splits).
+    pub paid: u64,
+}
 
-    /// Called when a game ends.
-    pub fn leave(&mut self, game: Pubkey, won: bool, paid: u64) {
-        if self.active_game == game {
-            self.active_game = Pubkey::default();
+impl BoardEntry {
+    pub fn net(&self) -> i128 {
+        self.paid as i128 - self.staked as i128
+    }
+}
+
+/// Top wallets by net SOL. One shared account paid for by the admin, so players pay no rent for stats.
+#[account]
+#[derive(InitSpace)]
+pub struct Leaderboard {
+    pub len: u8,
+    pub bump: u8,
+    pub entries: [BoardEntry; BOARD_SIZE],
+}
+
+impl Leaderboard {
+    /// Adds one finished game for `wallet`. When the board is full, a newcomer replaces
+    /// the lowest-net entry only if it's doing better.
+    pub fn record(&mut self, wallet: Pubkey, stake: u64, won: bool, paid: u64) {
+        let len = self.len as usize;
+        let found = self.entries[..len].iter().position(|e| e.wallet == wallet);
+        let mut entry = found.map_or(BoardEntry { wallet, ..Default::default() }, |i| self.entries[i]);
+        entry.played = entry.played.saturating_add(1);
+        entry.won = entry.won.saturating_add(won as u32);
+        entry.staked = entry.staked.saturating_add(stake);
+        entry.paid = entry.paid.saturating_add(paid);
+
+        match found {
+            Some(i) => self.entries[i] = entry,
+            None if len < BOARD_SIZE => {
+                self.entries[len] = entry;
+                self.len += 1;
+            }
+            None => {
+                let (worst, lowest) = self
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, e)| e.net())
+                    .map(|(i, e)| (i, e.net()))
+                    .unwrap();
+                if entry.net() > lowest {
+                    self.entries[worst] = entry;
+                }
+            }
         }
-        if won {
-            self.games_won = self.games_won.saturating_add(1);
-        }
-        self.lamports_won = self.lamports_won.saturating_add(paid);
     }
 }
 

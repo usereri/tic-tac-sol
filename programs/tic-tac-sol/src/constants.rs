@@ -10,7 +10,13 @@ pub const JACKPOT_SEED: &[u8] = b"jackpot";
 pub const GAME_SEED: &[u8] = b"game";
 
 #[constant]
-pub const STATS_SEED: &[u8] = b"stats";
+pub const ACTIVE_SEED: &[u8] = b"active";
+
+#[constant]
+pub const LEADERBOARD_SEED: &[u8] = b"leaderboard";
+
+/// Wallets kept on the on-chain leaderboard.
+pub const BOARD_SIZE: usize = 50;
 
 /// Cell / player markers. `X` always moves first.
 pub const EMPTY: u8 = 0;
