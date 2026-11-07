@@ -39,6 +39,49 @@ pub struct Jackpot {
     pub bump: u8,
 }
 
+/// Per-wallet record: the leaderboard, and the lock that allows one game per wallet at a time.
+/// Keyed by the player's real wallet, never the one-off session key.
+#[account]
+#[derive(InitSpace)]
+pub struct PlayerStats {
+    pub wallet: Pubkey,
+    /// The game this wallet is playing right now, or the default key when none.
+    pub active_game: Pubkey,
+    pub games_played: u32,
+    pub games_won: u32,
+    /// Total staked across all games.
+    pub lamports_staked: u64,
+    /// Total paid out to this wallet (wins and splits).
+    pub lamports_won: u64,
+    pub bump: u8,
+}
+
+impl PlayerStats {
+    /// Called by start_game for each player.
+    pub fn enter(&mut self, wallet: Pubkey, bump: u8, game: Pubkey, stake: u64) -> Result<()> {
+        if self.wallet == Pubkey::default() {
+            self.wallet = wallet;
+            self.bump = bump;
+        }
+        require_keys_eq!(self.active_game, Pubkey::default(), ErrorCode::PlayerBusy);
+        self.active_game = game;
+        self.games_played = self.games_played.saturating_add(1);
+        self.lamports_staked = self.lamports_staked.saturating_add(stake);
+        Ok(())
+    }
+
+    /// Called when a game ends.
+    pub fn leave(&mut self, game: Pubkey, won: bool, paid: u64) {
+        if self.active_game == game {
+            self.active_game = Pubkey::default();
+        }
+        if won {
+            self.games_won = self.games_won.saturating_add(1);
+        }
+        self.lamports_won = self.lamports_won.saturating_add(paid);
+    }
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 pub enum GameStatus {
     Active,

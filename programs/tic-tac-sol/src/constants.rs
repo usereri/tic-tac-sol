@@ -9,6 +9,9 @@ pub const JACKPOT_SEED: &[u8] = b"jackpot";
 #[constant]
 pub const GAME_SEED: &[u8] = b"game";
 
+#[constant]
+pub const STATS_SEED: &[u8] = b"stats";
+
 /// Cell / player markers. `X` always moves first.
 pub const EMPTY: u8 = 0;
 pub const X: u8 = 1;

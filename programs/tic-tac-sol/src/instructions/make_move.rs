@@ -19,6 +19,10 @@ pub struct PlayGame<'info> {
     pub jackpot: Account<'info, Jackpot>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
+    #[account(mut, seeds = [STATS_SEED, game.player_x.as_ref()], bump = stats_x.bump)]
+    pub stats_x: Account<'info, PlayerStats>,
+    #[account(mut, seeds = [STATS_SEED, game.player_o.as_ref()], bump = stats_o.bump)]
+    pub stats_o: Account<'info, PlayerStats>,
 }
 
 impl<'info> PlayGame<'info> {
@@ -43,6 +47,7 @@ impl<'info> PlayGame<'info> {
             &self.player_x.to_account_info(),
             &self.player_o.to_account_info(),
             &mut self.jackpot,
+            [&mut self.stats_x, &mut self.stats_o],
             status,
             winner,
         )

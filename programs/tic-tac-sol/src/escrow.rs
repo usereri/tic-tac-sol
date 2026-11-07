@@ -52,6 +52,7 @@ pub fn finish<'info>(
     player_x: &AccountInfo<'info>,
     player_o: &AccountInfo<'info>,
     jackpot: &mut Account<'info, Jackpot>,
+    [stats_x, stats_o]: [&mut Account<'info, PlayerStats>; 2],
     status: GameStatus,
     winner: u8,
 ) -> Result<()> {
@@ -74,6 +75,9 @@ pub fn finish<'info>(
     if status == GameStatus::Drained {
         jackpot.drained_count = jackpot.drained_count.saturating_add(1);
     }
+    let game_key = game.key();
+    stats_x.leave(game_key, winner == X, to_x);
+    stats_o.leave(game_key, winner == O, to_o);
     game.status = status;
     game.winner = winner;
 

@@ -11,13 +11,17 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
         accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
-        GAME_SEED, JACKPOT_SEED, O, X,
+        GAME_SEED, JACKPOT_SEED, O, STATS_SEED, X,
     },
 };
 
 const SOL: u64 = 1_000_000_000;
 const TX_FEE: u64 = 5_000;
 const STAKE: u64 = 50_000_000;
+
+fn stats_pda(wallet: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[STATS_SEED, wallet.as_ref()], &tic_tac_sol::id()).0
+}
 
 fn default_args() -> Settings {
     Settings {
@@ -155,6 +159,8 @@ impl Env {
                 config: self.config,
                 jackpot: self.jackpot,
                 game,
+                stats_x: stats_pda(&x.wallet.pubkey()),
+                stats_o: stats_pda(&o.wallet.pubkey()),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -180,6 +186,8 @@ impl Env {
                 player_o: m.o.wallet.pubkey(),
                 jackpot: self.jackpot,
                 config: self.config,
+                stats_x: stats_pda(&m.x.wallet.pubkey()),
+                stats_o: stats_pda(&m.o.wallet.pubkey()),
             }
             .to_account_metas(None),
         )
@@ -270,15 +278,17 @@ fn x_wins_and_takes_pot_minus_fees() {
     env.try_close(&m, &m.o.wallet).unwrap();
     assert!(env.svm.get_account(&m.game).map_or(true, |a| a.lamports == 0));
 
-    // X: -stake -gas -start tx fee (2 signatures) +pot(0.1 - move fees). Rent came back on close.
+    // Each wallet's first game also pays its stats account's rent (once, kept for the leaderboard).
+    let stats_rent = env.rent(env.svm.get_account(&stats_pda(&m.x.wallet.pubkey())).unwrap().data.len());
+    // X: -stake -gas -stats rent -start tx fee (2 signatures) +pot(0.1 - move fees). Game rent came back on close.
     assert_eq!(
         env.balance(&m.x.wallet.pubkey()),
-        bx - 50_000_000 - 1_000_000 - 2 * TX_FEE + 100_000_000 - 5 * TX_FEE
+        bx - 50_000_000 - 1_000_000 - stats_rent - 2 * TX_FEE + 100_000_000 - 5 * TX_FEE
     );
-    // O: -stake -gas -close tx fee.
+    // O: -stake -gas -stats rent -close tx fee.
     assert_eq!(
         env.balance(&m.o.wallet.pubkey()),
-        bo - 50_000_000 - 1_000_000 - TX_FEE
+        bo - 50_000_000 - 1_000_000 - stats_rent - TX_FEE
     );
 }
 
@@ -336,8 +346,9 @@ fn start_game_rejects_duplicate_participants() {
         wallet: x.wallet.insecure_clone(),
         session: Keypair::new(),
     };
+    // Same wallet on both sides: both stats accounts are the same PDA, so it fails before the handler.
     let (ix, _) = env.start_ix(&x, &o, 1);
-    assert_err(env.send(ix, &[&x.wallet]), "DuplicateParticipant");
+    assert!(env.send(ix, &[&x.wallet]).is_err());
 
     let o = Player::new(&mut env.svm);
     let o = Player {

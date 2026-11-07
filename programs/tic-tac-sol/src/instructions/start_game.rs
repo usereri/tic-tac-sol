@@ -33,6 +33,23 @@ pub struct StartGame<'info> {
         bump
     )]
     pub game: Account<'info, Game>,
+    /// Created on a wallet's first game; each player pays for their own.
+    #[account(
+        init_if_needed,
+        payer = player_x,
+        space = 8 + PlayerStats::INIT_SPACE,
+        seeds = [STATS_SEED, player_x.key().as_ref()],
+        bump
+    )]
+    pub stats_x: Account<'info, PlayerStats>,
+    #[account(
+        init_if_needed,
+        payer = player_o,
+        space = 8 + PlayerStats::INIT_SPACE,
+        seeds = [STATS_SEED, player_o.key().as_ref()],
+        bump
+    )]
+    pub stats_o: Account<'info, PlayerStats>,
     pub system_program: Program<'info, System>,
 }
 
@@ -88,6 +105,10 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         .checked_mul(2)
         .and_then(|p| p.checked_add(jackpot_bonus))
         .ok_or(ErrorCode::MathOverflow)?;
+
+    let game_key = ctx.accounts.game.key();
+    ctx.accounts.stats_x.enter(keys[0], ctx.bumps.stats_x, game_key, stake)?;
+    ctx.accounts.stats_o.enter(keys[1], ctx.bumps.stats_o, game_key, stake)?;
 
     let game = &mut ctx.accounts.game;
     game.set_inner(Game {

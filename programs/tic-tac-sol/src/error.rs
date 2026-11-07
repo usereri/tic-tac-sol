@@ -10,6 +10,8 @@ pub enum ErrorCode {
     Unauthorized,
     #[msg("Players and session keys must all be different accounts")]
     DuplicateParticipant,
+    #[msg("This wallet already has a game in progress")]
+    PlayerBusy,
     #[msg("Game is not active")]
     GameNotActive,
     #[msg("Game is still active")]
