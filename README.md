@@ -66,3 +66,22 @@ npm run dev
 Open http://localhost:5173 in **two tabs**, pick **Connect → Dev wallet (localnet)** in each (every tab gets its own airdropped keypair), and press **Enter queue** in both. The tabs pair through a `BroadcastChannel`, so local matchmaking only works between tabs of the same browser.
 
 After changing the program: `anchor build`, then `npm run codegen` in `app/` to regenerate the client.
+
+## Deploy (devnet + GitHub Pages)
+
+`.github/workflows/pages.yml` builds `app/` for devnet and publishes it to https://usereri.github.io/tic-tac-sol/ on every push to `main` that touches `app/`.
+
+One-time setup:
+
+1. **Pages source:** Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+2. **Repository variables:** Settings → Secrets and variables → Actions → **Variables** tab. All of these are public values baked into the site:
+   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — needed for cross-device matchmaking.
+   - `VITE_RPC_URL`, `VITE_WS_URL` — optional. They default to the public devnet endpoints; set them to a dedicated devnet RPC if the public one rate-limits.
+3. **Program on devnet** (from the repo root, with a devnet-funded `~/.config/solana/id.json`):
+   ```sh
+   solana config set --url devnet
+   anchor deploy --provider.cluster devnet
+   cd app && RPC_URL=https://api.devnet.solana.com npx tsx scripts/init-config.ts
+   ```
+
+Players need Phantom (or another Wallet Standard wallet) switched to devnet; the dev wallet only exists on localnet.
