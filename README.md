@@ -6,7 +6,7 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
 
 - Each player keeps at most 3 marks. Placing a 4th removes your oldest one first, and you can't place on the cell it just left.
 - Three in a row wins the whole pot, minus the real tx fees paid during the game.
-- Turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 75 slots (≈ 30 s) since the game started it gets 2 slots shorter, never below 8 slots (≈ 3.3 s).
+- Turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 75 slots (≈ 30 s) since the game started it gets 2 slots shorter, never below 12 slots (≈ 4.8 s). The first move gets 25 extra slots (≈ 10 s), because X only hears the game started a few seconds after the start transaction lands.
   - Idle player had moved before → the waiting player claims the pot (`claim_timeout`).
   - Idle player never moved → 50/50 split.
   - Nobody claims within `abandon_slots` after the deadline → anyone can settle 50/50 (`settle_abandoned`).

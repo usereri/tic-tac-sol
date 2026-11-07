@@ -11,7 +11,7 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
         accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
-        ACTIVE_SEED, BoardEntry, Leaderboard, BOARD_SIZE, GAME_SEED, JACKPOT_SEED, LEADERBOARD_SEED, O, X,
+        ACTIVE_SEED, BoardEntry, Leaderboard, BOARD_SIZE, GAME_SEED, JACKPOT_SEED, LEADERBOARD_SEED, O, START_GRACE_SLOTS, X,
     },
 };
 
@@ -393,6 +393,17 @@ fn deadline_is_inclusive_then_move_expires() {
 }
 
 #[test]
+fn first_move_gets_the_start_grace() {
+    let mut env = Env::new(default_args());
+    let m = env.start();
+    env.warp(12 + START_GRACE_SLOTS);
+    assert_err(env.try_claim(&m, &m.o.session), "TurnNotExpired");
+    env.moves(&m, &[0]); // last slot of the first turn: accepted
+    env.warp(13); // O's turn has no grace
+    assert_err(env.try_move(&m, &m.o.session, 4), "TurnExpired");
+}
+
+#[test]
 fn timeout_after_moving_loses() {
     let mut env = Env::new(default_args());
     let lock_rent = env.rent(ACTIVE_LEN); // refunded when the game ends
@@ -421,7 +432,7 @@ fn timeout_without_any_move_splits() {
     let (bx, bo) = (env.balance(&m.x.wallet.pubkey()), env.balance(&m.o.wallet.pubkey()));
 
     // X never makes the first move.
-    env.warp(13);
+    env.warp(13 + START_GRACE_SLOTS);
     env.try_claim(&m, &m.o.session).unwrap();
 
     let g = env.game(&m.game);
@@ -670,7 +681,7 @@ fn splits_credit_both_halves_and_close_locks() {
 
     // Timeout without any move.
     let m = env.start();
-    env.warp(13);
+    env.warp(13 + START_GRACE_SLOTS);
     env.try_claim(&m, &m.o.session).unwrap();
     let each = (2 * STAKE - TX_FEE) / 2;
     for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
@@ -781,7 +792,7 @@ fn full_leaderboard_evicts_only_for_a_better_newcomer() {
 
     // A split (net ~ -fee/2, better than -STAKE) also beats the remaining losers, for both players.
     let m = env.start();
-    env.warp(13);
+    env.warp(13 + START_GRACE_SLOTS);
     env.try_claim(&m, &m.o.session).unwrap();
     assert_eq!(env.board().len as usize, BOARD_SIZE);
     assert!(env.entry(&m.x.wallet.pubkey()).is_some());
@@ -798,18 +809,16 @@ fn turn_slots_speed_up_to_a_floor() {
         assert_eq!(turn_slots_at(30, elapsed), 28);
     }
     assert_eq!(turn_slots_at(30, 150), 26);
-    assert_eq!(turn_slots_at(30, 749), 12);
-    assert_eq!(turn_slots_at(30, 750), 10);
-    assert_eq!(turn_slots_at(30, 824), 10);
-    assert_eq!(turn_slots_at(30, 825), 8);
-    assert_eq!(turn_slots_at(30, 10_000_000), 8);
-    assert_eq!(turn_slots_at(30, u64::MAX), 8);
-    // A small start is never raised: the floor is min(8, start).
+    assert_eq!(turn_slots_at(30, 674), 14);
+    assert_eq!(turn_slots_at(30, 675), 12);
+    assert_eq!(turn_slots_at(30, 10_000_000), 12);
+    assert_eq!(turn_slots_at(30, u64::MAX), 12);
+    // A small start is never raised: the floor is min(12, start).
     for elapsed in [0, 75, 1_000, u64::MAX] {
         assert_eq!(turn_slots_at(5, elapsed), 5);
     }
-    assert_eq!(turn_slots_at(8, 1_000), 8);
-    assert_eq!(turn_slots_at(10, 1_000), 8);
+    assert_eq!(turn_slots_at(12, 1_000), 12);
+    assert_eq!(turn_slots_at(14, 1_000), 12);
 }
 
 /// Plays moves, each as late as allowed (but never past `target`), until the last action is
@@ -822,7 +831,7 @@ fn play_until_elapsed(env: &mut Env, m: &Match, target: u64) {
             assert_eq!(elapsed, target);
             return;
         }
-        let window = 30 - 2 * (elapsed / 75).min(10); // never below the 8 floor in the ranges used here
+        let window = (30 - 2 * (elapsed / 75).min(15)).max(12);
         env.warp(window.min(target - elapsed));
         let cell = non_winning_cell(&g);
         env.moves(m, &[cell]);
@@ -843,46 +852,46 @@ fn turn_window_follows_the_accelerating_clock() {
         ..default_args()
     };
 
-    // First move: the full 30 slots, inclusive.
+    // First move: the full 30 slots plus the start grace, inclusive.
     let mut env = Env::new(args.clone());
     let m = env.start();
-    env.warp(30);
+    env.warp(30 + START_GRACE_SLOTS);
     env.moves(&m, &[0]);
 
     let mut env = Env::new(args.clone());
     let m = env.start();
-    env.warp(31);
+    env.warp(30 + START_GRACE_SLOTS + 1);
     assert_err(env.try_move(&m, &m.x.session, 0), "TurnExpired");
 
-    // 750 slots in the window is 10: +10 is accepted, +11 is not.
+    // 600 slots in the window is 14: +14 is accepted, +15 is not.
     let mut env = Env::new(args.clone());
     let m = env.start();
-    play_until_elapsed(&mut env, &m, 750);
-    env.warp(11);
+    play_until_elapsed(&mut env, &m, 600);
+    env.warp(15);
     let (mover, _) = mover_and_waiting(&env, &m);
     let cell = non_winning_cell(&env.game(&m.game));
     assert_err(env.try_move(&m, &mover.session, cell), "TurnExpired");
 
     let mut env = Env::new(args);
     let m = env.start();
-    play_until_elapsed(&mut env, &m, 750);
+    play_until_elapsed(&mut env, &m, 600);
     let (mover, waiting) = mover_and_waiting(&env, &m);
-    env.warp(10);
+    env.warp(14);
     assert_err(env.try_claim(&m, &waiting.session), "TurnNotExpired");
     let cell = non_winning_cell(&env.game(&m.game));
-    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +10: accepted
+    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +14: accepted
 
-    // Past 825 slots the floor of 8 applies.
-    play_until_elapsed(&mut env, &m, 825);
+    // Past 675 slots the floor of 12 applies.
+    play_until_elapsed(&mut env, &m, 900);
     assert_eq!(env.game(&m.game).status, GameStatus::Active);
     let (mover, waiting) = mover_and_waiting(&env, &m);
-    env.warp(8);
+    env.warp(12);
     assert_err(env.try_claim(&m, &waiting.session), "TurnNotExpired");
     let cell = non_winning_cell(&env.game(&m.game));
-    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +8: accepted
+    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +12: accepted
 
     let (mover, waiting) = mover_and_waiting(&env, &m);
-    env.warp(9);
+    env.warp(13);
     let cell = non_winning_cell(&env.game(&m.game));
     assert_err(env.try_move(&m, &mover.session, cell), "TurnExpired");
     env.try_claim(&m, &waiting.session).unwrap();

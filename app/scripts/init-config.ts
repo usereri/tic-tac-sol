@@ -33,7 +33,7 @@ const settings: SettingsArgs = {
   maxStake: 1_000_000_000n, // 1 SOL
   gasDeposit: 1_000_000n, // 0.001 SOL, keeps the one-off wallet rent-exempt
   feeRefund: 5_000n, // the real base fee per signature
-  turnSlots: BigInt(process.env.TURN_SLOTS ?? 30), // ≈ 12 s per turn at the start; 2 slots shorter every ~30 s of game time, down to 8 (≈ 3.3 s)
+  turnSlots: BigInt(process.env.TURN_SLOTS ?? 30), // ≈ 12 s per turn at the start; 2 slots shorter every ~30 s of game time, down to 12 (≈ 4.8 s); the first move gets 25 extra slots
   abandonSlots: 150n, // ≈ 60 s
   drainFloorBps: 1_000, // 10%
   jackpotEvery: 10,

@@ -31,12 +31,14 @@ pub struct PlayGame<'info> {
 
 impl<'info> PlayGame<'info> {
     pub fn deadline(&self) -> Result<u64> {
+        let grace = if self.game.move_count == 0 { START_GRACE_SLOTS } else { 0 };
         self.game
             .last_action_slot
             .checked_add(turn_slots_at(
                 self.config.args.turn_slots,
                 self.game.last_action_slot.saturating_sub(self.game.started_slot),
             ))
+            .and_then(|d| d.checked_add(grace))
             .ok_or(error!(ErrorCode::MathOverflow))
     }
 
