@@ -11,42 +11,44 @@ import { TIC_TAC_SOL_PROGRAM_ADDRESS } from '../programs';
 
 /** InvalidConfig: Invalid config value */
 export const TIC_TAC_SOL_ERROR__INVALID_CONFIG = 0x1770; // 6000
+/** InvalidStake: Stake is outside the allowed range */
+export const TIC_TAC_SOL_ERROR__INVALID_STAKE = 0x1771; // 6001
 /** Unauthorized: Only the config admin can do this */
-export const TIC_TAC_SOL_ERROR__UNAUTHORIZED = 0x1771; // 6001
+export const TIC_TAC_SOL_ERROR__UNAUTHORIZED = 0x1772; // 6002
 /** DuplicateParticipant: Players and session keys must all be different accounts */
-export const TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT = 0x1772; // 6002
+export const TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT = 0x1773; // 6003
 /** GameNotActive: Game is not active */
-export const TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE = 0x1773; // 6003
+export const TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE = 0x1774; // 6004
 /** GameStillActive: Game is still active */
-export const TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE = 0x1774; // 6004
+export const TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE = 0x1775; // 6005
 /** InvalidCell: Cell index must be 0..=8 */
-export const TIC_TAC_SOL_ERROR__INVALID_CELL = 0x1775; // 6005
+export const TIC_TAC_SOL_ERROR__INVALID_CELL = 0x1776; // 6006
 /** CellOccupied: Cell is occupied */
-export const TIC_TAC_SOL_ERROR__CELL_OCCUPIED = 0x1776; // 6006
+export const TIC_TAC_SOL_ERROR__CELL_OCCUPIED = 0x1777; // 6007
 /** CellJustVacated: Cannot place on the cell your oldest mark just left */
-export const TIC_TAC_SOL_ERROR__CELL_JUST_VACATED = 0x1777; // 6007
+export const TIC_TAC_SOL_ERROR__CELL_JUST_VACATED = 0x1778; // 6008
 /** NotYourTurn: Signer is not the session key of the player to move */
-export const TIC_TAC_SOL_ERROR__NOT_YOUR_TURN = 0x1778; // 6008
+export const TIC_TAC_SOL_ERROR__NOT_YOUR_TURN = 0x1779; // 6009
 /** TurnExpired: Turn deadline has passed */
-export const TIC_TAC_SOL_ERROR__TURN_EXPIRED = 0x1779; // 6009
+export const TIC_TAC_SOL_ERROR__TURN_EXPIRED = 0x177a; // 6010
 /** TurnNotExpired: Turn deadline has not passed yet */
-export const TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED = 0x177a; // 6010
+export const TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED = 0x177b; // 6011
 /** NotClaimant: Signer is not the session key of the waiting player */
-export const TIC_TAC_SOL_ERROR__NOT_CLAIMANT = 0x177b; // 6011
+export const TIC_TAC_SOL_ERROR__NOT_CLAIMANT = 0x177c; // 6012
 /** ClaimWindowClosed: Claim window closed; the game can only be settled as abandoned */
-export const TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED = 0x177c; // 6012
+export const TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED = 0x177d; // 6013
 /** NotAbandoned: Game is not abandoned yet */
-export const TIC_TAC_SOL_ERROR__NOT_ABANDONED = 0x177d; // 6013
+export const TIC_TAC_SOL_ERROR__NOT_ABANDONED = 0x177e; // 6014
 /** InsufficientPot: Not enough lamports in the pot */
-export const TIC_TAC_SOL_ERROR__INSUFFICIENT_POT = 0x177e; // 6014
+export const TIC_TAC_SOL_ERROR__INSUFFICIENT_POT = 0x177f; // 6015
 /** MathOverflow: Math overflow */
-export const TIC_TAC_SOL_ERROR__MATH_OVERFLOW = 0x177f; // 6015
+export const TIC_TAC_SOL_ERROR__MATH_OVERFLOW = 0x1780; // 6016
 
-export type TicTacSolError = typeof TIC_TAC_SOL_ERROR__CELL_JUST_VACATED | typeof TIC_TAC_SOL_ERROR__CELL_OCCUPIED | typeof TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED | typeof TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT | typeof TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE | typeof TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE | typeof TIC_TAC_SOL_ERROR__INSUFFICIENT_POT | typeof TIC_TAC_SOL_ERROR__INVALID_CELL | typeof TIC_TAC_SOL_ERROR__INVALID_CONFIG | typeof TIC_TAC_SOL_ERROR__MATH_OVERFLOW | typeof TIC_TAC_SOL_ERROR__NOT_ABANDONED | typeof TIC_TAC_SOL_ERROR__NOT_CLAIMANT | typeof TIC_TAC_SOL_ERROR__NOT_YOUR_TURN | typeof TIC_TAC_SOL_ERROR__TURN_EXPIRED | typeof TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED | typeof TIC_TAC_SOL_ERROR__UNAUTHORIZED;
+export type TicTacSolError = typeof TIC_TAC_SOL_ERROR__CELL_JUST_VACATED | typeof TIC_TAC_SOL_ERROR__CELL_OCCUPIED | typeof TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED | typeof TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT | typeof TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE | typeof TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE | typeof TIC_TAC_SOL_ERROR__INSUFFICIENT_POT | typeof TIC_TAC_SOL_ERROR__INVALID_CELL | typeof TIC_TAC_SOL_ERROR__INVALID_CONFIG | typeof TIC_TAC_SOL_ERROR__INVALID_STAKE | typeof TIC_TAC_SOL_ERROR__MATH_OVERFLOW | typeof TIC_TAC_SOL_ERROR__NOT_ABANDONED | typeof TIC_TAC_SOL_ERROR__NOT_CLAIMANT | typeof TIC_TAC_SOL_ERROR__NOT_YOUR_TURN | typeof TIC_TAC_SOL_ERROR__TURN_EXPIRED | typeof TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED | typeof TIC_TAC_SOL_ERROR__UNAUTHORIZED;
 
 let ticTacSolErrorMessages: Record<TicTacSolError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
-  ticTacSolErrorMessages = { [TIC_TAC_SOL_ERROR__CELL_JUST_VACATED]: `Cannot place on the cell your oldest mark just left`, [TIC_TAC_SOL_ERROR__CELL_OCCUPIED]: `Cell is occupied`, [TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED]: `Claim window closed; the game can only be settled as abandoned`, [TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT]: `Players and session keys must all be different accounts`, [TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE]: `Game is not active`, [TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE]: `Game is still active`, [TIC_TAC_SOL_ERROR__INSUFFICIENT_POT]: `Not enough lamports in the pot`, [TIC_TAC_SOL_ERROR__INVALID_CELL]: `Cell index must be 0..=8`, [TIC_TAC_SOL_ERROR__INVALID_CONFIG]: `Invalid config value`, [TIC_TAC_SOL_ERROR__MATH_OVERFLOW]: `Math overflow`, [TIC_TAC_SOL_ERROR__NOT_ABANDONED]: `Game is not abandoned yet`, [TIC_TAC_SOL_ERROR__NOT_CLAIMANT]: `Signer is not the session key of the waiting player`, [TIC_TAC_SOL_ERROR__NOT_YOUR_TURN]: `Signer is not the session key of the player to move`, [TIC_TAC_SOL_ERROR__TURN_EXPIRED]: `Turn deadline has passed`, [TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED]: `Turn deadline has not passed yet`, [TIC_TAC_SOL_ERROR__UNAUTHORIZED]: `Only the config admin can do this` };
+  ticTacSolErrorMessages = { [TIC_TAC_SOL_ERROR__CELL_JUST_VACATED]: `Cannot place on the cell your oldest mark just left`, [TIC_TAC_SOL_ERROR__CELL_OCCUPIED]: `Cell is occupied`, [TIC_TAC_SOL_ERROR__CLAIM_WINDOW_CLOSED]: `Claim window closed; the game can only be settled as abandoned`, [TIC_TAC_SOL_ERROR__DUPLICATE_PARTICIPANT]: `Players and session keys must all be different accounts`, [TIC_TAC_SOL_ERROR__GAME_NOT_ACTIVE]: `Game is not active`, [TIC_TAC_SOL_ERROR__GAME_STILL_ACTIVE]: `Game is still active`, [TIC_TAC_SOL_ERROR__INSUFFICIENT_POT]: `Not enough lamports in the pot`, [TIC_TAC_SOL_ERROR__INVALID_CELL]: `Cell index must be 0..=8`, [TIC_TAC_SOL_ERROR__INVALID_CONFIG]: `Invalid config value`, [TIC_TAC_SOL_ERROR__INVALID_STAKE]: `Stake is outside the allowed range`, [TIC_TAC_SOL_ERROR__MATH_OVERFLOW]: `Math overflow`, [TIC_TAC_SOL_ERROR__NOT_ABANDONED]: `Game is not abandoned yet`, [TIC_TAC_SOL_ERROR__NOT_CLAIMANT]: `Signer is not the session key of the waiting player`, [TIC_TAC_SOL_ERROR__NOT_YOUR_TURN]: `Signer is not the session key of the player to move`, [TIC_TAC_SOL_ERROR__TURN_EXPIRED]: `Turn deadline has passed`, [TIC_TAC_SOL_ERROR__TURN_NOT_EXPIRED]: `Turn deadline has not passed yet`, [TIC_TAC_SOL_ERROR__UNAUTHORIZED]: `Only the config admin can do this` };
 }
 
 export function getTicTacSolErrorMessage(code: TicTacSolError): string {

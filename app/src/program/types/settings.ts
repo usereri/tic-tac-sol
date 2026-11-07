@@ -9,8 +9,10 @@
 import { combineCodec, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder } from '@solana/kit';
 
 export type Settings = { 
-/** Lamports each player puts into the pot. */
-stake: bigint; 
+/** Smallest stake (lamports, per player) a game may use. */
+minStake: bigint; 
+/** Largest stake (lamports, per player) a game may use. */
+maxStake: bigint; 
 /** Lamports each player sends to their one-off session wallet (must keep it rent-exempt). */
 gasDeposit: bigint; 
 /** Lamports the escrow pays back to whoever signs a move / claim (the real tx fee). */
@@ -25,8 +27,10 @@ drainFloorBps: number;
 jackpotEvery: number;  };
 
 export type SettingsArgs = { 
-/** Lamports each player puts into the pot. */
-stake: number | bigint; 
+/** Smallest stake (lamports, per player) a game may use. */
+minStake: number | bigint; 
+/** Largest stake (lamports, per player) a game may use. */
+maxStake: number | bigint; 
 /** Lamports each player sends to their one-off session wallet (must keep it rent-exempt). */
 gasDeposit: number | bigint; 
 /** Lamports the escrow pays back to whoever signs a move / claim (the real tx fee). */
@@ -41,11 +45,11 @@ drainFloorBps: number;
 jackpotEvery: number;  };
 
 export function getSettingsEncoder(): FixedSizeEncoder<SettingsArgs> {
-    return getStructEncoder([['stake', getU64Encoder()], ['gasDeposit', getU64Encoder()], ['feeRefund', getU64Encoder()], ['turnSlots', getU64Encoder()], ['abandonSlots', getU64Encoder()], ['drainFloorBps', getU16Encoder()], ['jackpotEvery', getU8Encoder()]]);
+    return getStructEncoder([['minStake', getU64Encoder()], ['maxStake', getU64Encoder()], ['gasDeposit', getU64Encoder()], ['feeRefund', getU64Encoder()], ['turnSlots', getU64Encoder()], ['abandonSlots', getU64Encoder()], ['drainFloorBps', getU16Encoder()], ['jackpotEvery', getU8Encoder()]]);
 }
 
 export function getSettingsDecoder(): FixedSizeDecoder<Settings> {
-    return getStructDecoder([['stake', getU64Decoder()], ['gasDeposit', getU64Decoder()], ['feeRefund', getU64Decoder()], ['turnSlots', getU64Decoder()], ['abandonSlots', getU64Decoder()], ['drainFloorBps', getU16Decoder()], ['jackpotEvery', getU8Decoder()]]);
+    return getStructDecoder([['minStake', getU64Decoder()], ['maxStake', getU64Decoder()], ['gasDeposit', getU64Decoder()], ['feeRefund', getU64Decoder()], ['turnSlots', getU64Decoder()], ['abandonSlots', getU64Decoder()], ['drainFloorBps', getU16Decoder()], ['jackpotEvery', getU8Decoder()]]);
 }
 
 export function getSettingsCodec(): FixedSizeCodec<SettingsArgs, Settings> {
