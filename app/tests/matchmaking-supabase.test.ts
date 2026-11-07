@@ -41,7 +41,7 @@ vi.mock('@supabase/supabase-js', () => ({
 
 const { SupabaseTransport } = await import('../src/lib/matchmaking-supabase')
 
-const peer = (id: string, joinedAt = 1): Peer => ({ id, wallet: `w${id}`, session: id, stake: '1000', joinedAt })
+const peer = (id: string, joinedAt = 1): Peer => ({ id, wallet: `w${id}`, session: id, stake: '1000', joinedAt, proof: { message: `join ${id}`, signature: `sig ${id}` } })
 const entry = (id: string, hb: number, joinedAt = 1) => ({ ...peer(id, joinedAt), hb })
 const env = (to: string): Envelope => ({ to, body: '{}', sig: 'sig' })
 const last = () => channels[channels.length - 1]
@@ -198,7 +198,15 @@ describe('SupabaseTransport', () => {
       last().handlers['presence:sync']({})
     }
 
+    /** Make the fake server apply our track/untrack to presence under our own key, as the real one does. */
+    const echo = () => {
+      const key: string = t['key']
+      last().track.mockImplementation((payload: object) => void (last().presence[key] = [payload]))
+      last().untrack.mockImplementation(() => void delete last().presence[key])
+    }
+
     it('publishes hb with track() and bumps it every 5 s', () => {
+      echo()
       last().status('SUBSCRIBED')
       t.track(peer('a'))
       expect(last().track).toHaveBeenLastCalledWith(entry('a', 1))
@@ -207,6 +215,35 @@ describe('SupabaseTransport', () => {
       vi.advanceTimersByTime(5000)
       expect(last().track).toHaveBeenLastCalledWith(entry('a', 3))
       expect(last().track).toHaveBeenCalledTimes(3)
+    })
+
+    it('tracks again within a second when the server dropped our track', () => {
+      last().status('SUBSCRIBED')
+      t.track(peer('a')) // never shows up in presence
+      vi.advanceTimersByTime(1000)
+      expect(last().track).toHaveBeenLastCalledWith(entry('a', 2))
+      vi.advanceTimersByTime(1000)
+      expect(last().track).toHaveBeenLastCalledWith(entry('a', 3))
+      echo()
+      last().track(entry('a', 3)) // the server finally applies it
+      last().track.mockClear()
+      vi.advanceTimersByTime(4000)
+      expect(last().track).not.toHaveBeenCalled()
+    })
+
+    it('untracks again when our entry is still there after untrack', () => {
+      echo()
+      last().status('SUBSCRIBED')
+      t.track(peer('a'))
+      last().untrack.mockImplementation(() => {}) // dropped by the server
+      vi.advanceTimersByTime(1000)
+      t.track(null)
+      expect(last().untrack).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(1000)
+      expect(last().untrack).toHaveBeenCalledTimes(2)
+      delete last().presence[t['key']]
+      vi.advanceTimersByTime(5000)
+      expect(last().untrack).toHaveBeenCalledTimes(2)
     })
 
     it('does not publish while not tracking or not subscribed', () => {
@@ -285,6 +322,26 @@ describe('SupabaseTransport', () => {
       present(entry('a', 1))
       expect(events.peers).toHaveBeenCalledTimes(1)
       expect(t.peers()[0]).not.toHaveProperty('hb')
+    })
+
+    it('ignores entries without a well-formed proof', () => {
+      last().status('SUBSCRIBED')
+      const { proof: _p, ...noProof } = entry('a', 1)
+      present(
+        noProof,
+        { ...entry('b', 1), proof: null },
+        { ...entry('d', 1), proof: { message: 'm' } },
+        { ...entry('e', 1), proof: { signature: 's' } },
+        { ...entry('f', 1), proof: { message: 1, signature: 's' } },
+        entry('c', 1),
+      )
+      expect(t.peers()).toEqual([peer('c')])
+    })
+
+    it('passes the proof through unchanged and drops extra fields', () => {
+      last().status('SUBSCRIBED')
+      present({ ...entry('a', 1), extra: true, proof: { message: 'm', signature: 's', more: 1 } })
+      expect(t.peers()).toEqual([{ ...peer('a'), proof: { message: 'm', signature: 's' } }])
     })
 
     it('ignores entries without stake or hb', () => {

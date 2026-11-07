@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { generateKeyPairSigner, getBase64Decoder, getUtf8Encoder, signBytes, type KeyPairSigner } from '@solana/kit'
-import { Matchmaker, type Direct, type Envelope, type Pairing, type Peer } from '../src/lib/matchmaking-core'
+import { generateKeyPairSigner, getBase58Decoder, getBase64Decoder, getUtf8Encoder, signBytes, type KeyPairSigner } from '@solana/kit'
+import { joinMessage, Matchmaker, type Direct, type Envelope, type JoinProof, type Pairing, type Peer } from '../src/lib/matchmaking-core'
 import { Bus, typeOf, type FakeTransport } from './fake-transport'
+
+const CLUSTER = 'devnet'
 
 type Player = {
   mm: Matchmaker
   t: FakeTransport
   signer: KeyPairSigner
+  wallet: KeyPairSigner
   id: string
   pairs: Pairing[]
   direct: { msg: Direct; from: Peer }[]
@@ -15,11 +18,12 @@ type Player = {
 let bus: Bus
 let players: Player[]
 
-async function make(): Promise<Player> {
+/** A player with a fresh session key, and a fresh wallet unless it shares one. */
+async function make(wallet?: KeyPairSigner): Promise<Player> {
   const t = bus.transport()
-  const mm = new Matchmaker(t)
+  const mm = new Matchmaker(t, CLUSTER)
   const signer = await generateKeyPairSigner()
-  const p: Player = { mm, t, signer, id: signer.address, pairs: [], direct: [] }
+  const p: Player = { mm, t, signer, wallet: wallet ?? (await generateKeyPairSigner()), id: signer.address, pairs: [], direct: [] }
   mm.onPaired((x) => p.pairs.push(x))
   mm.onDirect((msg, from) => p.direct.push({ msg, from }))
   players.push(p)
@@ -28,8 +32,38 @@ async function make(): Promise<Player> {
 
 const makeMany = (n: number) => Promise.all(Array.from({ length: n }, make))
 
-const join = (p: Player, joinedAt: number, stake = 1n, wallet = `w-${p.id}`) =>
-  p.mm.join({ wallet, session: p.signer, stake, joinedAt })
+const base58 = getBase58Decoder()
+const utf8 = getUtf8Encoder()
+const toBase64 = getBase64Decoder()
+
+type EntryOptions = {
+  wallet?: KeyPairSigner
+  /** The session address, which is also the id. */
+  session?: string
+  stake?: string
+  joinedAt?: number
+  cluster?: string
+  /** Who actually signs the proof; the wallet unless a test says otherwise. */
+  signer?: KeyPairSigner
+}
+
+/** A queue entry as another player would publish it, with a proof signed by hand. */
+async function makeEntry(o: EntryOptions = {}): Promise<Peer> {
+  const wallet = o.wallet ?? (await generateKeyPairSigner())
+  const session = o.session ?? (await generateKeyPairSigner()).address
+  const fields = { wallet: wallet.address, session, stake: o.stake ?? '1000', joinedAt: o.joinedAt ?? 1 }
+  const message = joinMessage({ ...fields, cluster: o.cluster ?? CLUSTER })
+  const signature = base58.decode(await signBytes((o.signer ?? wallet).keyPair.privateKey, utf8.encode(message)))
+  return { id: session, ...fields, proof: { message, signature } }
+}
+
+/** Enter the queue with a proof signed by the player's wallet. */
+async function join(p: Player, joinedAt: number, stake = 1n, proof?: JoinProof) {
+  proof ??= (await makeEntry({ wallet: p.wallet, session: p.id, stake: stake.toString(), joinedAt })).proof
+  p.mm.join({ wallet: p.wallet.address, session: p.signer, stake, joinedAt, proof })
+  // Other players only see our entry once its proof has been checked.
+  await drain()
+}
 
 /** Signing and verifying are async and chained per Matchmaker; wait until they are all idle. */
 async function drain() {
@@ -46,16 +80,13 @@ async function step(ms: number) {
 /** Join everyone while proposals are dropped, so the order of joins cannot decide who pairs. */
 async function joinTogether(entries: [Player, number, bigint?][]) {
   bus.drop = (m) => typeOf(m) === 'propose'
-  entries.forEach(([p, at, stake]) => join(p, at, stake))
+  for (const [p, at, stake] of entries) await join(p, at, stake)
   await drain()
   bus.drop = () => false
 }
 
 const sent = (p: Player) => p.t.sent.map((e) => ({ to: JSON.parse(e.body).to as string, type: typeOf(e) }))
 const ids = (list: Peer[]) => list.map((p) => p.id)
-
-const utf8 = getUtf8Encoder()
-const toBase64 = getBase64Decoder()
 
 /** A signed envelope made by hand, so tests can break exactly one rule at a time. */
 async function forge(o: { signer: KeyPairSigner; from: string; to: string; payload: Direct; ts?: number; bodyTo?: string }): Promise<Envelope> {
@@ -83,8 +114,8 @@ afterEach(() => {
 describe('pairing two peers', () => {
   it('older joinedAt becomes X, the other O', async () => {
     const [a, b] = await makeMany(2)
-    join(b, 200)
-    join(a, 100)
+    await join(b, 200)
+    await join(a, 100)
     await step(2000)
     expect(a.pairs).toHaveLength(1)
     expect(b.pairs).toHaveLength(1)
@@ -97,8 +128,8 @@ describe('pairing two peers', () => {
 
   it('breaks joinedAt ties by id', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 100)
-    join(b, 100)
+    await join(a, 100)
+    await join(b, 100)
     await step(2000)
     const [first] = [a, b].sort((x, y) => x.id.localeCompare(y.id))
     expect(first.pairs[0].role).toBe('x')
@@ -107,16 +138,16 @@ describe('pairing two peers', () => {
 
   it('puts the stake, wallet and session in the pairing', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1, 5n, 'wallet-a')
-    join(b, 2, 5n, 'wallet-b')
+    await join(a, 1, 5n)
+    await join(b, 2, 5n)
     await step(500)
-    expect(a.pairs[0].me).toEqual({ id: a.id, wallet: 'wallet-a', session: a.id, stake: '5', joinedAt: 1 })
-    expect(a.pairs[0].opponent).toEqual({ id: b.id, wallet: 'wallet-b', session: b.id, stake: '5', joinedAt: 2 })
+    expect(a.pairs[0].me).toMatchObject({ id: a.id, wallet: a.wallet.address, session: a.id, stake: '5', joinedAt: 1 })
+    expect(a.pairs[0].opponent).toMatchObject({ id: b.id, wallet: b.wallet.address, session: b.id, stake: '5', joinedAt: 2 })
   })
 
   it('does not pair a lone peer', async () => {
     const [a] = await makeMany(1)
-    join(a, 1)
+    await join(a, 1)
     await step(2000)
     expect(a.pairs).toEqual([])
     expect(a.t.sent).toEqual([])
@@ -149,7 +180,7 @@ describe('FIFO with several peers', () => {
     const [a, b, c, d] = await makeMany(4)
     await joinTogether([[a, 1], [b, 2], [c, 3]])
     await step(2000)
-    join(d, 4)
+    await join(d, 4)
     await step(2000)
     expect(c.pairs[0].opponent.id).toBe(d.id)
     expect(d.pairs[0].opponent.id).toBe(c.id)
@@ -159,8 +190,8 @@ describe('FIFO with several peers', () => {
 describe('stake buckets', () => {
   it('never pairs different stakes', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1, 1n)
-    join(b, 2, 2n)
+    await join(a, 1, 1n)
+    await join(b, 2, 2n)
     await step(3000)
     expect(a.pairs).toEqual([])
     expect(b.pairs).toEqual([])
@@ -192,10 +223,14 @@ describe('stake buckets', () => {
 })
 
 describe('same wallet', () => {
+  const sharedWallet = () => generateKeyPairSigner()
+
   it('never pairs two entries of one wallet', async () => {
-    const [a1, a2] = await makeMany(2)
-    join(a1, 1, 1n, 'same')
-    join(a2, 2, 1n, 'same')
+    const w = await sharedWallet()
+    const a1 = await make(w)
+    const a2 = await make(w)
+    await join(a1, 1)
+    await join(a2, 2)
     await step(10_000)
     expect(a1.pairs).toEqual([])
     expect(a2.pairs).toEqual([])
@@ -203,29 +238,51 @@ describe('same wallet', () => {
   })
 
   it('lets the younger entry pair only after the older one leaves', async () => {
-    const [a1, a2, c] = await makeMany(3)
-    join(a1, 1, 1n, 'same')
-    join(a2, 2, 1n, 'same')
-    join(c, 3, 1n, 'other')
+    const w = await sharedWallet()
+    const a1 = await make(w)
+    const a2 = await make(w)
+    const [c, d] = await makeMany(2)
+    await join(a1, 1)
+    await join(a2, 2)
+    await join(c, 3)
     await step(3000)
     // c took the older entry; the younger one is still waiting.
     expect(a1.pairs[0].opponent.id).toBe(c.id)
     expect(a2.pairs).toEqual([])
-    const d = await make()
-    join(d, 4, 1n, 'third')
+    await join(d, 4)
     await step(3000)
     expect(a2.pairs[0]).toMatchObject({ role: 'x', opponent: { id: d.id } })
   })
 
   it('the younger entry gets in line when the older leaves', async () => {
-    const [a1, a2, c] = await makeMany(3)
-    join(a1, 1, 1n, 'same')
-    join(a2, 2, 1n, 'same')
+    const w = await sharedWallet()
+    const a1 = await make(w)
+    const a2 = await make(w)
+    const c = await make()
+    await join(a1, 1)
+    await join(a2, 2)
     a1.mm.leave()
-    join(c, 3, 1n, 'other')
+    await join(c, 3)
     await step(2000)
     expect(a2.pairs[0].opponent.id).toBe(c.id)
     expect(c.pairs[0].opponent.id).toBe(a2.id)
+  })
+
+  it('counts across stakes: the younger entry at another stake waits behind the older one', async () => {
+    const w = await sharedWallet()
+    const a1 = await make(w)
+    const a2 = await make(w)
+    const b = await make()
+    await join(a1, 1, 1n)
+    await join(a2, 2, 2n)
+    await join(b, 3, 2n)
+    await step(5000)
+    expect(a2.pairs).toEqual([])
+    expect(b.pairs).toEqual([])
+    expect(a1.pairs).toEqual([])
+    a1.mm.leave()
+    await step(2000)
+    expect(a2.pairs[0]).toMatchObject({ role: 'x', opponent: { id: b.id } })
   })
 })
 
@@ -234,11 +291,11 @@ describe('rejoining', () => {
     const [a, b, c] = await makeMany(3)
     await joinTogether([[a, 100], [b, 200]])
     await step(500)
-    join(c, 300)
+    await join(c, 300)
     await step(1000)
     expect(c.pairs).toEqual([])
     // a's match failed; it rejoins with the original joinedAt and is older than c again.
-    join(a, 100)
+    await join(a, 100)
     await step(500)
     expect(a.pairs).toHaveLength(2)
     expect(a.pairs[1]).toMatchObject({ role: 'x', opponent: { id: c.id } })
@@ -249,8 +306,8 @@ describe('rejoining', () => {
     const [a, b, c] = await makeMany(3)
     await joinTogether([[a, 100], [b, 200]])
     await step(500)
-    join(c, 300)
-    join(a, Date.now())
+    await join(c, 300)
+    await join(a, Date.now())
     await step(1000)
     expect(c.pairs[0]).toMatchObject({ role: 'x', opponent: { id: a.id } })
     expect(a.pairs[1]).toMatchObject({ role: 'o', opponent: { id: c.id } })
@@ -260,11 +317,11 @@ describe('rejoining', () => {
 describe('leave', () => {
   it('removes you from the queue and stops you pairing', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1)
+    await join(a, 1)
     a.mm.leave()
     expect(a.mm.queued).toBeNull()
     expect(bus.queue()).toEqual([])
-    join(b, 2)
+    await join(b, 2)
     await step(2000)
     expect(a.pairs).toEqual([])
     expect(b.pairs).toEqual([])
@@ -281,8 +338,8 @@ describe('leave', () => {
 
   it('does not untrack again after pairing already did', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     const calls = a.t.trackCalls.length
     a.mm.leave()
@@ -292,10 +349,10 @@ describe('leave', () => {
 
   it('can rejoin after leaving', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1)
+    await join(a, 1)
     a.mm.leave()
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     expect(a.pairs[0].opponent.id).toBe(b.id)
   })
@@ -313,8 +370,8 @@ describe('addressing', () => {
 
   it('ignores messages while not joined', async () => {
     const [a, b] = await makeMany(2)
-    join(b, 1)
-    b.mm.send(a.mm.queued ?? { id: a.id, wallet: '', session: a.id, stake: '1', joinedAt: 0 }, { type: 'cancel' })
+    await join(b, 1)
+    b.mm.send(a.mm.queued ?? { id: a.id, wallet: '', session: a.id, stake: '1', joinedAt: 0, proof: { message: '', signature: '' } }, { type: 'cancel' })
     await drain()
     expect(a.direct).toEqual([])
     expect(a.t.sent).toEqual([])
@@ -380,8 +437,8 @@ describe('signatures', () => {
   describe('spoofed directs to a paired player', () => {
     async function paired() {
       const [a, b, attacker] = await Promise.all([make(), make(), generateKeyPairSigner()])
-      join(a, 1)
-      join(b, 2)
+      await join(a, 1)
+      await join(b, 2)
       await step(500)
       expect(b.pairs).toHaveLength(1)
       return { a, b, attacker }
@@ -439,7 +496,7 @@ describe('expected partner', () => {
   it('ignores a propose from a peer that is not queued at all', async () => {
     const [b] = await makeMany(1)
     const stranger = await generateKeyPairSigner()
-    join(b, 2)
+    await join(b, 2)
     await deliver(b, await forge({ signer: stranger, from: stranger.address, to: b.id, payload: { type: 'propose' } }))
     expect(b.pairs).toEqual([])
     expect(b.t.sent).toEqual([])
@@ -450,7 +507,7 @@ describe('accept handling', () => {
   it('cancels an accept from someone it never asked', async () => {
     const [a, c] = await makeMany(2)
     const stranger = await generateKeyPairSigner()
-    join(a, 1)
+    await join(a, 1)
     await deliver(a, await forge({ signer: stranger, from: stranger.address, to: a.id, payload: { type: 'accept' } }))
     expect(a.pairs).toEqual([])
     expect(sent(a)).toEqual([{ to: stranger.address, type: 'cancel' }])
@@ -459,8 +516,8 @@ describe('accept handling', () => {
 
   it('a paired peer cancels an accept from a third peer', async () => {
     const [a, b, c] = await makeMany(3)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     await deliver(a, await forge({ signer: c.signer, from: c.id, to: a.id, payload: { type: 'accept' } }))
     expect(sent(a).filter((m) => m.type === 'cancel')).toEqual([{ to: c.id, type: 'cancel' }])
@@ -470,8 +527,8 @@ describe('accept handling', () => {
 
   it('does not cancel the opponent re-sending its accept', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     await deliver(a, await forge({ signer: b.signer, from: b.id, to: a.id, payload: { type: 'accept' } }))
     expect(sent(a).some((m) => m.type === 'cancel')).toBe(false)
@@ -483,8 +540,8 @@ describe('lost messages', () => {
   it('the proposer keeps proposing until the accept gets through', async () => {
     const [a, b] = await makeMany(2)
     bus.drop = (m) => typeOf(m) === 'accept'
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(2000)
     expect(b.pairs).toHaveLength(1)
     expect(a.pairs).toEqual([])
@@ -499,8 +556,8 @@ describe('lost messages', () => {
   it('gives up proposing after the linger window', async () => {
     const [a, b] = await makeMany(2)
     bus.drop = (m) => typeOf(m) === 'accept'
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(8000)
     const proposes = sent(a).filter((m) => m.type === 'propose').length
     await step(3000)
@@ -513,8 +570,8 @@ describe('lost messages', () => {
   it('a lost propose is retried on the next tick', async () => {
     const [a, b] = await makeMany(2)
     bus.drop = (m) => typeOf(m) === 'propose'
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(1000)
     expect(b.pairs).toEqual([])
     bus.drop = () => false
@@ -525,8 +582,8 @@ describe('lost messages', () => {
 
   it('stops proposing once paired', async () => {
     const [a, b] = await makeMany(2)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     const n = a.t.sent.length
     await step(3000)
@@ -539,8 +596,8 @@ describe('direct messages', () => {
 
   async function paired() {
     const [a, b] = await makeMany(2)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(500)
     return { a, b }
   }
@@ -568,7 +625,7 @@ describe('direct messages', () => {
   it('ignores a direct from a peer that is not the opponent', async () => {
     const { b } = await paired()
     const c = await make()
-    join(c, 3)
+    await join(c, 3)
     await drain()
     c.mm.send(b.pairs[0].me, { type: 'cancel' })
     await drain()
@@ -595,30 +652,38 @@ describe('direct messages', () => {
 
   it('send is a no-op when not joined', async () => {
     const [a] = await makeMany(1)
-    a.mm.send({ id: 'b', wallet: '', session: 'b', stake: '1', joinedAt: 0 }, { type: 'cancel' })
+    a.mm.send({ id: 'b', wallet: '', session: 'b', stake: '1', joinedAt: 0, proof: { message: '', signature: '' } }, { type: 'cancel' })
     await drain()
     expect(a.t.sent).toEqual([])
   })
 })
 
 describe('queue entries', () => {
-  it('drops entries whose id is not their session', async () => {
-    const [spectator] = await makeMany(1)
-    const liar = bus.transport()
-    liar.track({ id: 'x', wallet: 'w', session: 'y', stake: '1', joinedAt: 1 })
+  const sizeSeenBy = async (spectator: Player) => {
+    await drain()
     const sizes: number[] = []
     spectator.mm.onQueueSize((n) => sizes.push(n))
-    expect(sizes.at(-1)).toBe(0)
+    return sizes.at(-1)
+  }
+
+  it('counts a valid entry published by another player', async () => {
+    const [spectator] = await makeMany(1)
+    bus.transport().track(await makeEntry())
+    expect(await sizeSeenBy(spectator)).toBe(1)
+  })
+
+  it('drops entries whose id is not their session', async () => {
+    const [spectator] = await makeMany(1)
+    bus.transport().track({ ...(await makeEntry()), id: 'x' })
+    expect(await sizeSeenBy(spectator)).toBe(0)
   })
 
   it('counts an id once even if it appears twice', async () => {
     const [spectator] = await makeMany(1)
-    const peer: Peer = { id: 'p', wallet: 'w', session: 'p', stake: '1', joinedAt: 1 }
-    bus.transport().track(peer)
-    bus.transport().track(peer)
-    const sizes: number[] = []
-    spectator.mm.onQueueSize((n) => sizes.push(n))
-    expect(sizes.at(-1)).toBe(1)
+    const entry = await makeEntry()
+    bus.transport().track(entry)
+    bus.transport().track(entry)
+    expect(await sizeSeenBy(spectator)).toBe(1)
   })
 })
 
@@ -628,7 +693,7 @@ describe('queue counts', () => {
     const counts: number[] = []
     a.mm.onQueueSize((n) => counts.push(n))
     expect(counts).toEqual([0])
-    join(a, 1)
+    await join(a, 1)
     expect(counts.at(-1)).toBe(1)
   })
 
@@ -637,12 +702,12 @@ describe('queue counts', () => {
     const seen = vi.fn()
     spectator.mm.onQueueSize(seen)
     expect(seen).toHaveBeenLastCalledWith(0)
-    join(a, 1)
+    await join(a, 1)
     expect(seen).toHaveBeenLastCalledWith(1)
-    join(b, 2)
+    await join(b, 2)
     await step(500)
     expect(seen).toHaveBeenLastCalledWith(0)
-    join(c, 3)
+    await join(c, 3)
     expect(seen).toHaveBeenLastCalledWith(1)
     c.mm.leave()
     expect(seen).toHaveBeenLastCalledWith(0)
@@ -654,8 +719,8 @@ describe('queue counts', () => {
     const [a, b] = await makeMany(2)
     const seen = vi.fn()
     a.mm.onQueueSize(seen)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     await step(1000)
     expect(seen).toHaveBeenLastCalledWith(0)
   })
@@ -686,8 +751,8 @@ describe('onQueue', () => {
     const [a, b] = await makeMany(2)
     const seen = vi.fn()
     a.mm.onQueue(seen)
-    join(a, 1)
-    join(b, 2)
+    await join(a, 1)
+    await join(b, 2)
     expect(ids(seen.mock.calls.at(-1)![0])).toEqual([a.id, b.id])
     await step(500)
     expect(seen.mock.calls.at(-1)![0]).toEqual([])
@@ -697,7 +762,7 @@ describe('onQueue', () => {
     const [spectator, a] = await makeMany(2)
     const seen = vi.fn()
     spectator.mm.onQueue(seen)
-    join(a, 1)
+    await join(a, 1)
     const calls = seen.mock.calls.length
     await step(3000)
     expect(seen).toHaveBeenCalledTimes(calls)
@@ -719,7 +784,280 @@ describe('onQueue', () => {
     const fn = vi.fn()
     spectator.mm.onQueue(fn)()
     fn.mockClear()
-    join(a, 1)
+    await join(a, 1)
     expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+describe('join proofs', () => {
+  /** What a spectator sees after `entries` are published and checked. */
+  async function seenWith(entries: Peer[]) {
+    const [spectator] = await makeMany(1)
+    const seen = vi.fn()
+    spectator.mm.onQueue(seen)
+    for (const e of entries) bus.transport().track(e)
+    await drain()
+    await step(1000)
+    return ids(seen.mock.calls.at(-1)![0])
+  }
+
+  it('accepts a valid proof and shows the entry after a drain', async () => {
+    const [spectator] = await makeMany(1)
+    const seen = vi.fn()
+    spectator.mm.onQueue(seen)
+    const entry = await makeEntry()
+    bus.transport().track(entry)
+    // Not visible until its signature has been checked.
+    expect(seen.mock.calls.at(-1)![0]).toEqual([])
+    await drain()
+    expect(seen.mock.calls.at(-1)![0]).toEqual([entry])
+  })
+
+  it('ignores a proof signed by a key that is not the wallet', async () => {
+    const other = await generateKeyPairSigner()
+    expect(await seenWith([await makeEntry({ signer: other })])).toEqual([])
+  })
+
+  it.each([
+    ['garbage', 'garbage'],
+    ['empty', ''],
+    ['64 zero bytes', '1'.repeat(64)],
+    ['wrong length', '1'.repeat(10)],
+  ])('ignores a %s signature', async (_n, signature) => {
+    const e = await makeEntry()
+    expect(await seenWith([{ ...e, proof: { ...e.proof, signature } }])).toEqual([])
+  })
+
+  it('ignores an entry with no proof', async () => {
+    const e = await makeEntry()
+    expect(await seenWith([{ ...e, proof: undefined } as unknown as Peer])).toEqual([])
+  })
+
+  it('shows the control entry the other cases tamper with', async () => {
+    const e = await makeEntry()
+    expect(await seenWith([e])).toEqual([e.id])
+  })
+
+  it.each<[string, (e: Peer, other: string) => Peer | Promise<Peer>]>([
+    ['tampered stake', (e) => ({ ...e, stake: '2000' })],
+    ['tampered joinedAt', (e) => ({ ...e, joinedAt: e.joinedAt + 1 })],
+    ['tampered wallet', (e, other) => ({ ...e, wallet: other })],
+    ['tampered session and id', (e, other) => ({ ...e, session: other, id: other })],
+    ['tampered session only', (e, other) => ({ ...e, session: other })],
+    ['a different cluster', () => makeEntry({ cluster: 'mainnet-beta' })],
+  ])('ignores %s', async (_n, alter) => {
+    const e = await makeEntry()
+    const other = (await generateKeyPairSigner()).address
+    expect(await seenWith([await alter(e, other)])).toEqual([])
+  })
+
+  it('does not let a verified signature approve altered fields', async () => {
+    const e = await makeEntry()
+    const forged = [
+      { ...e, stake: '2000' },
+      // The message is rewritten to match the altered fields, but the signature is the old one.
+      { ...e, stake: '2000', proof: { message: joinMessage({ ...e, stake: '2000', cluster: CLUSTER }), signature: e.proof.signature } },
+      { ...e, joinedAt: 99, proof: { message: joinMessage({ ...e, joinedAt: 99, cluster: CLUSTER }), signature: e.proof.signature } },
+    ]
+    const [spectator] = await makeMany(1)
+    const seen = vi.fn()
+    spectator.mm.onQueue(seen)
+    // The honest entry is checked and cached first.
+    const honest = bus.transport()
+    honest.track(e)
+    await drain()
+    expect(ids(seen.mock.calls.at(-1)![0])).toEqual([e.id])
+    // The honest entry leaves; the same id comes back with altered fields and the old signature.
+    honest.track(null)
+    await drain()
+    for (const f of forged) {
+      bus.transport().track(f)
+      await drain()
+      await step(500)
+      expect(seen.mock.calls.at(-1)![0]).toEqual([])
+    }
+  })
+
+  it('checks each proof once, however often the queue is read', async () => {
+    const verify = vi.spyOn(crypto.subtle, 'verify')
+    const [spectator] = await makeMany(1)
+    spectator.mm.onQueue(() => {})
+    bus.transport().track(await makeEntry())
+    bus.transport().track(await makeEntry())
+    await drain()
+    await step(5000)
+    expect(verify).toHaveBeenCalledTimes(2)
+    verify.mockRestore()
+  })
+
+  it('checks a rejected proof only once too', async () => {
+    const verify = vi.spyOn(crypto.subtle, 'verify')
+    const [spectator] = await makeMany(1)
+    spectator.mm.onQueue(() => {})
+    const e = await makeEntry({ signer: await generateKeyPairSigner() })
+    bus.transport().track(e)
+    await drain()
+    await step(5000)
+    expect(verify).toHaveBeenCalledTimes(1)
+    verify.mockRestore()
+  })
+
+  it('a player whose own proof is bad is never paired', async () => {
+    const [a, b] = await makeMany(2)
+    const bad = await makeEntry({ wallet: a.wallet, session: a.id, joinedAt: 1, signer: await generateKeyPairSigner() })
+    await join(a, 1, 1n, bad.proof)
+    await join(b, 2)
+    await step(3000)
+    // a's own entry carries a bad proof, so b never sees it and nothing pairs.
+    expect(a.pairs).toEqual([])
+    expect(b.pairs).toEqual([])
+  })
+})
+
+describe('own proof warning', () => {
+  it('warns once when our own proof does not verify', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const [a] = await makeMany(1)
+    const bad = await makeEntry({ wallet: a.wallet, session: a.id, joinedAt: 1, signer: await generateKeyPairSigner() })
+    await join(a, 1, 1n, bad.proof)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toMatch(/join proof/)
+    warn.mockRestore()
+  })
+
+  it('warns when our proof signs a different cluster', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const [a] = await makeMany(1)
+    const other = await makeEntry({ wallet: a.wallet, session: a.id, joinedAt: 1, cluster: 'mainnet-beta' })
+    await join(a, 1, 1n, other.proof)
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('stays quiet with a good proof', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const [a] = await makeMany(1)
+    await join(a, 1)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
+describe('onDuplicate', () => {
+  async function sameWallet() {
+    const w = await generateKeyPairSigner()
+    return [await make(w), await make(w)] as const
+  }
+
+  it('fires immediately with null', async () => {
+    const [a] = await makeMany(1)
+    const fn = vi.fn()
+    a.mm.onDuplicate(fn)
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn).toHaveBeenLastCalledWith(null)
+  })
+
+  it('reports the older entry of our own wallet', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).toMatchObject({ id: older.id, wallet: older.wallet.address })
+  })
+
+  it('is null for the oldest entry', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    older.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    await step(2000)
+    expect(fn.mock.calls.every(([x]) => x === null)).toBe(true)
+  })
+
+  it('flips to null when the older one leaves', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).not.toBeNull()
+    older.mm.leave()
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).toBeNull()
+  })
+
+  it('is null after we pair', async () => {
+    const [older, younger] = await sameWallet()
+    const c = await make()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    older.mm.leave()
+    await join(c, 3)
+    await step(2000)
+    expect(younger.pairs).toHaveLength(1)
+    expect(fn.mock.calls.at(-1)![0]).toBeNull()
+  })
+
+  it('is null after we leave', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).not.toBeNull()
+    younger.mm.leave()
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).toBeNull()
+  })
+
+  it('does not fire again without a change', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1)
+    await join(younger, 2)
+    await step(500)
+    const calls = fn.mock.calls.length
+    await step(5000)
+    expect(fn).toHaveBeenCalledTimes(calls)
+  })
+
+  it('counts an older entry of our wallet at another stake', async () => {
+    const [older, younger] = await sameWallet()
+    const fn = vi.fn()
+    younger.mm.onDuplicate(fn)
+    await join(older, 1, 1n)
+    await join(younger, 2, 5n)
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).toMatchObject({ id: older.id })
+  })
+
+  it('ignores an older same-wallet entry with an invalid proof', async () => {
+    const [a] = await makeMany(1)
+    const fn = vi.fn()
+    a.mm.onDuplicate(fn)
+    await join(a, 5)
+    const bad = await makeEntry({ wallet: a.wallet, joinedAt: 1, signer: await generateKeyPairSigner() })
+    bus.transport().track(bad)
+    await step(2000)
+    expect(fn.mock.calls.every(([x]) => x === null)).toBe(true)
+  })
+
+  it('reports an older same-wallet entry with a valid proof', async () => {
+    const [a] = await makeMany(1)
+    const fn = vi.fn()
+    a.mm.onDuplicate(fn)
+    await join(a, 5)
+    const other = await makeEntry({ wallet: a.wallet, joinedAt: 1 })
+    bus.transport().track(other)
+    await step(500)
+    expect(fn.mock.calls.at(-1)![0]).toEqual(other)
   })
 })
