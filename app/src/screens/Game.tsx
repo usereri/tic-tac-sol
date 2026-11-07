@@ -6,6 +6,7 @@ import { COORDS, short, sol } from '../lib/format'
 import {
   canPlace,
   claimTimeout,
+  settleAbandoned,
   closeGame,
   GameStatus,
   makeMove,
@@ -21,7 +22,7 @@ import {
   type Game as GameState,
 } from '../lib/game'
 import { loadSession, type Session } from '../lib/session'
-import { playHref } from '../lib/stakes'
+import { allowedStakes, playHref, saveStake } from '../lib/stakes'
 import { describeError, explorerTx, SLOT_MS } from '../lib/solana'
 import { useWallet } from '../lib/wallet'
 
@@ -82,14 +83,19 @@ export function GameScreen({ id }: { id: string }) {
   const locked = slotsLeft < 2
 
   // Opponent missed the deadline: claim it (wins if they had moved before, else 50/50).
+  // Past the claim window (both players were gone) either player settles it 50/50, which also
+  // frees both wallets' one-game locks.
+  const abandoned = slotsLeft < -Number(config?.abandonSlots ?? 150n)
   useEffect(() => {
-    if (!game || !session || !gameAddress || !active || me === 0 || game.turn === me) return
+    if (!game || !session || !gameAddress || !active || me === 0) return
     if (slotsLeft >= 0 || claiming.current) return
+    if (!abandoned && game.turn === me) return
     claiming.current = true
-    claimTimeout(session.signer, { address: gameAddress, game })
+    const ref = { address: gameAddress, game }
+    ;(abandoned ? settleAbandoned(session.signer, ref) : claimTimeout(session.signer, ref))
       .catch((e) => setError(describeError(e)))
       .finally(() => (claiming.current = false))
-  }, [slotsLeft, game, session, gameAddress, active, me])
+  }, [slotsLeft, abandoned, game, session, gameAddress, active, me])
 
   // After the game: X closes the account (rent back to X), then both sweep their session wallet.
   const cleaned = useRef(false)
@@ -266,14 +272,33 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
             </div></div>
           </div>
           <span className="label">The whole game cost {sol(game.feesPaid, 6)} SOL in fees.</span>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <a className="btn" href={playHref(game.stake)}><span>Play again</span><span className="tag">{sol(game.stake, 2)} SOL</span></a>
+          <div className="grid items-end gap-4 sm:grid-cols-2">
+            <PlayAgain stake={game.stake} />
             {log[0]?.signature
               ? <a className="ghost min-h-[68px]" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Last move on Explorer ↗</a>
               : <a className="ghost min-h-[68px]" href="#/">Home</a>}
           </div>
         </section>
       </main>
+    </div>
+  )
+}
+
+/** Play again, optionally at a different stake (e.g. step down after a big game). */
+function PlayAgain({ stake }: { stake: bigint }) {
+  const { config } = useConfig()
+  const [next, setNext] = useState(stake)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-4 gap-2" role="group" aria-label="Stake for the next game">
+        {allowedStakes(config).map((s) => (
+          <button key={String(s)} type="button" aria-pressed={s === next} onClick={() => { setNext(s); saveStake(s) }}
+            className={`border-[3px] border-ink py-1 text-[13px] font-bold ${s === next ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
+            {sol(s, 2)}
+          </button>
+        ))}
+      </div>
+      <a className="btn" href={playHref(next)}><span>Play again</span><span className="tag">{sol(next, 2)} SOL</span></a>
     </div>
   )
 }

@@ -99,6 +99,7 @@ export function Home() {
             <header><span className="label">Jackpot</span><span className="code">{jackpot?.drained ?? 0} / {config?.jackpotEvery ?? 10} drained</span></header>
             <div className="body"><div className="num text-[34px]">{sol(jackpot?.balance ?? 0n, 3)} SOL</div></div>
           </div>
+          <a className="ghost" href="#/leaderboard">Leaderboard ↗</a>
         </aside>
       </main>
       <Ticker />
