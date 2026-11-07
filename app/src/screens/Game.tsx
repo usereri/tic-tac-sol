@@ -21,6 +21,7 @@ import {
   type Game as GameState,
 } from '../lib/game'
 import { loadSession, type Session } from '../lib/session'
+import { playHref } from '../lib/stakes'
 import { describeError, explorerTx, SLOT_MS } from '../lib/solana'
 import { useWallet } from '../lib/wallet'
 
@@ -266,7 +267,7 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
           </div>
           <span className="label">The whole game cost {sol(game.feesPaid, 6)} SOL in fees.</span>
           <div className="grid gap-4 sm:grid-cols-2">
-            <a className="btn" href="#/play"><span>Play again</span><span className="tag">0.05 SOL</span></a>
+            <a className="btn" href={playHref(game.stake)}><span>Play again</span><span className="tag">{sol(game.stake, 2)} SOL</span></a>
             {log[0]?.signature
               ? <a className="ghost min-h-[68px]" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Last move on Explorer ↗</a>
               : <a className="ghost min-h-[68px]" href="#/">Home</a>}

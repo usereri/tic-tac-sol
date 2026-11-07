@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   createNoopSigner,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getTransactionDecoder,
   type Address,
   type Blockhash,
 } from '@solana/kit'
@@ -13,71 +10,78 @@ import { sol, short } from '../lib/format'
 import { useConfig } from '../lib/game'
 import { matchmaker, type Direct, type Pairing, type Peer } from '../lib/matchmaking'
 import { createSession, saveSession, type Session } from '../lib/session'
-import { buildPartiallySigned, cosign, describeError, rpc, sendSigned, wireBase64 } from '../lib/solana'
+import {
+  buildPartiallySigned,
+  cosign,
+  describeError,
+  rpc,
+  sendSigned,
+  wireBase64,
+  type Lifetime,
+} from '../lib/solana'
 import { useWallet } from '../lib/wallet'
-import { findGamePda, getStartGameInstructionAsync, TIC_TAC_SOL_PROGRAM_ADDRESS } from '../program'
+import { findGamePda, getStartGameInstructionAsync } from '../program'
+import { checkOffer, type Offer } from '../lib/offer'
 
 const SIGN_WINDOW_MS = 30_000
+const WATCH_MS = 1500
 
 type Phase = 'queued' | 'matched' | 'signing' | 'waiting' | 'ready' | 'sending'
-type Offer = { tx: string; game: Address; nonce: bigint; blockhash: string; lastValidBlockHeight: bigint }
+/** A start transaction that may still land: follow it until its blockhash expires. */
+type Watch = { game: Address; lastValidBlockHeight: bigint }
 
 function go(game: string) {
   location.hash = `#/game/${game}`
 }
 
-/** O checks the offer before signing: right program, right game, our session key in it. */
-function checkOffer(offer: Offer, txBase64: string, session: Address, expectedGame: Address) {
-  if (offer.game !== expectedGame) throw new Error('Offer is for an unexpected game account')
-  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(txBase64))
-  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes)
-  const keys = message.staticAccounts as readonly string[]
-  if (!keys.includes(TIC_TAC_SOL_PROGRAM_ADDRESS) || !keys.includes(session) || !keys.includes(expectedGame)) {
-    throw new Error('Offer does not match this match')
-  }
-  // The wire format doesn't carry the expiry, so restore it from the offer.
-  return {
-    ...tx,
-    lifetimeConstraint: { blockhash: offer.blockhash as Blockhash, lastValidBlockHeight: offer.lastValidBlockHeight },
-  }
-}
-
-export function Play() {
+export function Play({ stake }: { stake: bigint }) {
   const { wallet } = useWallet()
   const { config } = useConfig()
   const [session, setSession] = useState<Session | null>(null)
   const [pairing, setPairing] = useState<Pairing | null>(null)
   const [phase, setPhase] = useState<Phase>('queued')
   const [offer, setOffer] = useState<Offer | null>(null)
+  const [watch, setWatch] = useState<Watch | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deadline, setDeadline] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
+  const [queue, setQueue] = useState<Peer[]>([])
   const joinedAt = useRef(Date.now())
-  const [queue, setQueue] = useState(0)
 
-  const stake = config?.stake ?? 50_000_000n
+  // Listeners subscribe once and read the latest state from here, so a message that
+  // arrives right after pairing (before React re-renders) is not dropped.
+  const live = useRef({ wallet, session, pairing, phase })
+  live.current = { wallet, session, pairing, phase }
+
   const gas = config?.gasDeposit ?? 1_000_000n
+  const inRange = !config || (stake >= config.minStake && stake <= config.maxStake)
+
+  const join = () => {
+    const { wallet, session } = live.current
+    if (wallet && session) matchmaker.join({ wallet: wallet.address, session: session.signer, stake, joinedAt: joinedAt.current })
+  }
 
   // Enter the queue with a fresh one-off session wallet. Nothing is paid yet.
   useEffect(() => {
-    if (!wallet) return
-    let live = true
+    if (!wallet || !inRange) return
+    let alive = true
     createSession().then((s) => {
-      if (!live) return
+      if (!alive) return
       setSession(s)
-      matchmaker.join(wallet.address, s.signer.address, joinedAt.current)
+      matchmaker.join({ wallet: wallet.address, session: s.signer, stake, joinedAt: joinedAt.current })
     })
     return () => {
-      live = false
+      alive = false
       matchmaker.leave()
     }
-  }, [wallet])
+  }, [wallet, stake, inRange])
 
-  useEffect(() => matchmaker.onQueueSize(setQueue), [])
+  useEffect(() => matchmaker.onQueue((peers) => setQueue(peers.filter((p) => p.stake === stake.toString()))), [stake])
 
   useEffect(
     () =>
       matchmaker.onPaired((p) => {
+        live.current.pairing = p
         setPairing(p)
         setPhase('matched')
         setError(null)
@@ -86,59 +90,71 @@ export function Play() {
     [],
   )
 
-  const requeue = (reason?: string) => {
-    if (pairing) matchmaker.send(pairing.opponent, { type: 'cancel' })
+  /** Whoever was supposed to sign and didn't goes to the back of the queue. */
+  const requeue = (reason: string, notify: boolean) => {
+    const { pairing, phase } = live.current
+    const stalled = (pairing?.role === 'x' && (phase === 'matched' || phase === 'signing')) || (pairing?.role === 'o' && phase === 'ready')
+    if (pairing && notify) matchmaker.send(pairing.opponent, { type: 'cancel' })
+    if (stalled) joinedAt.current = Date.now()
+    live.current.pairing = null
     setPairing(null)
     setOffer(null)
     setDeadline(null)
     setPhase('queued')
-    if (reason) setError(reason)
-    if (wallet && session) matchmaker.join(wallet.address, session.signer.address, joinedAt.current)
+    setError(`${reason} Back in the queue${stalled ? ', at the end.' : ', same place.'}`)
+    join()
   }
 
   useEffect(
     () =>
       matchmaker.onDirect((msg: Direct, from: Peer) => {
+        const { pairing, phase } = live.current
         if (!pairing || from.id !== pairing.opponent.id) return
         if (msg.type === 'offer' && pairing.role === 'o') {
           setOffer({
             tx: msg.tx,
             game: msg.game as Address,
             nonce: BigInt(msg.nonce),
-            blockhash: msg.blockhash,
-            lastValidBlockHeight: BigInt(msg.lastValidBlockHeight),
+            lifetime: { blockhash: msg.blockhash as Blockhash, lastValidBlockHeight: BigInt(msg.lastValidBlockHeight) },
           })
           setPhase('ready')
         } else if (msg.type === 'started') {
           go(msg.game)
-        } else if (msg.type === 'cancel') {
-          requeue('Opponent left the match. Back in the queue, same place.')
+        } else if (msg.type === 'cancel' && phase !== 'sending') {
+          requeue('Opponent left the match.', false)
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pairing, wallet, session],
+    [],
   )
 
-  // 20 s to get both signatures, then back to the queue (keeping our place).
+  // 30 s to get both signatures.
   useEffect(() => {
     if (!deadline) return
     const t = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(t)
   }, [deadline])
   useEffect(() => {
-    if (deadline && now > deadline && phase !== 'sending') requeue('Signatures timed out. Back in the queue, same place.')
+    if (deadline && now > deadline && phase !== 'sending') requeue('Signatures timed out.', true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now])
 
-  // X: watch for the game account in case the "started" message is missed.
+  // A start transaction we signed can land after we gave up (a slow wallet popup on the
+  // other side). Keep looking for the game until its blockhash expires, even from the queue.
   useEffect(() => {
-    if (phase !== 'waiting' || !offer) return
+    if (!watch) return
     const t = setInterval(async () => {
-      const { value } = await rpc.getAccountInfo(offer.game, { encoding: 'base64' }).send()
-      if (value) go(offer.game)
-    }, 1000)
+      try {
+        const [{ value }, height] = await Promise.all([
+          rpc.getAccountInfo(watch.game, { encoding: 'base64' }).send(),
+          rpc.getBlockHeight().send(),
+        ])
+        if (value) go(watch.game)
+        else if (height > watch.lastValidBlockHeight) setWatch(null)
+      } catch { /* try again next tick */ }
+    }, WATCH_MS)
     return () => clearInterval(t)
-  }, [phase, offer])
+  }, [watch])
 
   async function signAsX() {
     if (!wallet || !session || !pairing) return
@@ -152,19 +168,21 @@ export function Play() {
         sessionX: session.signer.address,
         sessionO: pairing.opponent.session as Address,
         nonce,
+        stake,
       })
       const tx = await buildPartiallySigned(wallet.signer, [ix])
       const [game] = await findGamePda({ playerX: wallet.address, nonce })
       saveSession(game, wallet.address, session)
-      const { blockhash, lastValidBlockHeight } = tx.lifetimeConstraint as { blockhash: string; lastValidBlockHeight: bigint }
-      setOffer({ tx: '', game, nonce, blockhash, lastValidBlockHeight })
+      const lifetime = tx.lifetimeConstraint as Lifetime
+      setOffer({ tx: '', game, nonce, lifetime })
+      setWatch({ game, lastValidBlockHeight: lifetime.lastValidBlockHeight })
       matchmaker.send(pairing.opponent, {
         type: 'offer',
         tx: wireBase64(tx),
         game,
         nonce: nonce.toString(),
-        blockhash,
-        lastValidBlockHeight: lastValidBlockHeight.toString(),
+        blockhash: lifetime.blockhash,
+        lastValidBlockHeight: lifetime.lastValidBlockHeight.toString(),
       })
       setPhase('waiting')
     } catch (e) {
@@ -178,10 +196,10 @@ export function Play() {
     setPhase('sending')
     setError(null)
     try {
-      const [expected] = await findGamePda({ playerX: pairing.opponent.wallet as Address, nonce: offer.nonce })
-      const tx = checkOffer(offer, offer.tx, session.signer.address, expected)
+      const tx = await checkOffer(offer, { wallet: wallet.signer, session: session.signer.address, opponent: pairing.opponent, stake })
       const signed = await cosign(tx, wallet.signer)
       saveSession(offer.game, wallet.address, session)
+      setWatch({ game: offer.game, lastValidBlockHeight: offer.lifetime.lastValidBlockHeight })
       await sendSigned(signed)
       matchmaker.send(pairing.opponent, { type: 'started', game: offer.game })
       go(offer.game)
@@ -191,13 +209,17 @@ export function Play() {
     }
   }
 
-  if (!wallet) {
+  if (!wallet || !inRange) {
     return (
       <div className="flex min-h-svh flex-col">
         <Nav />
         <main className="flex flex-1 flex-col gap-6 px-4 py-8 md:px-12">
-          <h1 className="mega text-[clamp(40px,7vw,96px)]">Connect<br /><mark>first.</mark></h1>
-          <p className="max-w-[560px] text-ink-2">Connect a wallet with the button in the top right to enter the queue. On localnet, pick "Dev wallet" — each browser tab gets its own funded player.</p>
+          <h1 className="mega text-[clamp(40px,7vw,96px)]">{wallet ? <>Stake not<br /><mark>allowed.</mark></> : <>Connect<br /><mark>first.</mark></>}</h1>
+          <p className="max-w-[560px] text-ink-2">
+            {wallet
+              ? `Stakes must be between ${sol(config!.minStake, 2)} and ${sol(config!.maxStake, 2)} SOL.`
+              : 'Connect a wallet with the button in the top right to enter the queue. On localnet, pick "Dev wallet" — each browser tab gets its own funded player.'}
+          </p>
           <a className="ghost max-w-[320px]" href="#/">Back</a>
         </main>
       </div>
@@ -210,12 +232,13 @@ export function Play() {
   const mySigned = (iAmX && (phase === 'waiting' || phase === 'sending')) || (!iAmX && phase === 'sending')
   const theirSigned = !iAmX && (phase === 'ready' || phase === 'sending')
   const canSign = (iAmX && phase === 'matched') || (!iAmX && phase === 'ready')
+  const count = queue.length
 
   return (
     <div className="flex min-h-svh flex-col">
-      <Nav meta={<><span>Queue · FIFO</span><span>{queue} waiting</span></>} />
+      <Nav meta={<><span>Queue · FIFO · {sol(stake, 2)} SOL</span><span>{count} waiting</span></>} />
       <main className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-12 md:py-8">
-        <span className="label">{pairing ? 'Paired first-in, first-out · nothing paid yet' : 'Looking for an opponent · nothing paid yet'}</span>
+        <span className="label">{pairing ? 'Paired first-in, first-out · nothing paid yet' : `Looking for an opponent at ${sol(stake, 2)} SOL · nothing paid yet`}</span>
         <h1 className="mega text-[clamp(40px,7vw,96px)]">
           {pairing ? <>Match<br /><mark>found.</mark></> : <>In the<br /><mark>queue<span className="blink">_</span></mark></>}
         </h1>
@@ -225,7 +248,7 @@ export function Play() {
           <span className="text-center font-display text-[22px] font-black [font-stretch:125%] md:text-[56px]">VS</span>
           {opponent
             ? <Slab player={iAmX ? 2 : 1} who={`Opponent · ${iAmX ? 'O' : 'X'}`} address={opponent.wallet} note={`waited ${Math.max(0, Math.round((Date.now() - opponent.joinedAt) / 1000))} s`} />
-            : <div className="panel"><header><span className="label">Opponent</span><span className="code">{queue <= 1 ? 'nobody else yet' : `${queue} in queue`}</span></header><div className="body"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
+            : <div className="panel"><header><span className="label">Opponent</span><span className="code">{count <= 1 ? 'nobody else yet' : `${count} in queue`}</span></header><div className="body"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
         </div>
 
         <div className="grid items-start gap-5 md:grid-cols-[1fr_1fr_420px] md:gap-7">
@@ -250,7 +273,7 @@ export function Play() {
           </div>
           <div className="flex flex-col gap-3.5">
             <button type="button" className="btn text-[18px]" disabled={!canSign} onClick={iAmX ? signAsX : signAsO}>
-              <span>{phase === 'signing' || phase === 'sending' ? 'Signing…' : `Sign with ${wallet.kind === 'dev' ? 'dev wallet' : wallet.name}`}</span>
+              <span>{phase === 'signing' || phase === 'sending' ? 'Signing…' : 'Sign & stake'}</span>
               <span className="tag">{sol(stake + gas, 3)} SOL</span>
             </button>
             <span className="label text-center">{error ?? 'Nothing is paid unless both sign'}</span>

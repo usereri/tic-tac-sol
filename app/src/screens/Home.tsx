@@ -3,19 +3,26 @@ import { DemoBoard } from '../components/DemoBoard'
 import { Nav, Ticker } from '../components/Chrome'
 import { sol } from '../lib/format'
 import { useConfig, useJackpot } from '../lib/game'
-import { matchmaker } from '../lib/matchmaking'
+import { matchmaker, type Peer } from '../lib/matchmaking'
+import { allowedStakes, playHref, savedStake, saveStake } from '../lib/stakes'
 import { useWallet } from '../lib/wallet'
 
 export function Home() {
   const { config, error } = useConfig()
   const jackpot = useJackpot()
   const { wallet } = useWallet()
-  const [queue, setQueue] = useState(0)
+  const [queue, setQueue] = useState<Peer[]>([])
+  const [stake, setStake] = useState(savedStake)
   const [demo, setDemo] = useState({ note: '#00 · new game', fees: '0.000000 SOL' })
 
-  useEffect(() => matchmaker.onQueueSize(setQueue), [])
+  useEffect(() => matchmaker.onQueue(setQueue), [])
 
-  const stake = config?.stake ?? 50_000_000n
+  const choices = allowedStakes(config)
+  const waiting = queue.filter((p) => p.stake === stake.toString()).length
+  const pick = (s: bigint) => {
+    setStake(s)
+    saveStake(s)
+  }
   const gas = config?.gasDeposit ?? 1_000_000n
 
   return (
@@ -28,7 +35,7 @@ export function Home() {
             Three marks.<br /><mark>No draws.</mark>
           </h1>
           <p className="max-w-[640px] text-[14px] text-ink-2 md:text-[16px]">
-            Stake {sol(stake, 2)} SOL. Each player keeps three marks; place a fourth and your oldest disappears.
+            Pick your stake. Each player keeps three marks; place a fourth and your oldest disappears.
             Five seconds per move. The winner takes the pot.
           </p>
 
@@ -60,7 +67,22 @@ export function Home() {
           <div className="panel">
             <header><span className="label">Matchmaking</span><span className="code">FIFO</span></header>
             <div className="body">
-              <div><span className="label">In the queue</span><div className="num text-[56px]">{String(queue).padStart(2, '0')}</div></div>
+              <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+                <legend className="label mb-2">Stake per player</legend>
+                <div className="grid grid-cols-4 gap-2">
+                  {choices.map((s) => {
+                    const count = queue.filter((p) => p.stake === s.toString()).length
+                    return (
+                      <button key={String(s)} type="button" aria-pressed={s === stake} onClick={() => pick(s)}
+                        className={`flex flex-col items-center border-[3px] border-ink px-1 py-2 font-bold ${s === stake ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
+                        <span>{sol(s, 2)}</span>
+                        <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-80">{count ? `${count} waiting` : 'SOL'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+              <div><span className="label">Waiting at {sol(stake, 2)} SOL</span><div className="num text-[56px]">{String(waiting).padStart(2, '0')}</div></div>
               <div className="kv">
                 <span>Stake</span><span>{sol(stake, 2)} SOL</span>
                 <span>Pot</span><span>{sol(stake * 2n, 2)} SOL</span>
@@ -68,7 +90,7 @@ export function Home() {
               </div>
             </div>
           </div>
-          <a className="btn" href="#/play" aria-disabled={!wallet}>
+          <a className="btn" href={playHref(stake)} aria-disabled={!wallet}>
             <span>{wallet ? 'Enter queue' : 'Connect to play'}</span>
             <span className="tag">{sol(stake, 2)} SOL</span>
           </a>
