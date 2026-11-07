@@ -6,5 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './boardEntry';
 export * from './gameStatus';
 export * from './settings';

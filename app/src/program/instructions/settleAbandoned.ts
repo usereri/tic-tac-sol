@@ -8,15 +8,15 @@
 
 import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, SolanaError, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { getAccountMetaFactory, type InstructionAccountInput, type InstructionAccountInputAddress, type InstructionSignerInput, type ResolvedInstructionAccount, type ResolvedInstructionAccountMeta } from '@solana/program-client-core';
-import { findConfigPda, findJackpotPda } from '../pdas';
+import { findConfigPda, findJackpotPda, findLeaderboardPda } from '../pdas';
 import { TIC_TAC_SOL_PROGRAM_ADDRESS } from '../programs';
 
 export const SETTLE_ABANDONED_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([159, 126, 122, 193, 18, 218, 5, 1]);
 
 export function getSettleAbandonedDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(SETTLE_ABANDONED_DISCRIMINATOR); }
 
-export type SettleAbandonedInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountSigner extends string | AccountMeta<string> = string, TAccountGame extends string | AccountMeta<string> = string, TAccountPlayerX extends string | AccountMeta<string> = string, TAccountPlayerO extends string | AccountMeta<string> = string, TAccountJackpot extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountSigner extends string ? WritableSignerAccount<TAccountSigner> & AccountSignerMeta<TAccountSigner> : TAccountSigner, TAccountGame extends string ? WritableAccount<TAccountGame> : TAccountGame, TAccountPlayerX extends string ? WritableAccount<TAccountPlayerX> : TAccountPlayerX, TAccountPlayerO extends string ? WritableAccount<TAccountPlayerO> : TAccountPlayerO, TAccountJackpot extends string ? WritableAccount<TAccountJackpot> : TAccountJackpot, TAccountConfig extends string ? ReadonlyAccount<TAccountConfig> : TAccountConfig, ...TRemainingAccounts]>;
+export type SettleAbandonedInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountSigner extends string | AccountMeta<string> = string, TAccountGame extends string | AccountMeta<string> = string, TAccountPlayerX extends string | AccountMeta<string> = string, TAccountPlayerO extends string | AccountMeta<string> = string, TAccountJackpot extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountActiveX extends string | AccountMeta<string> = string, TAccountActiveO extends string | AccountMeta<string> = string, TAccountLeaderboard extends string | AccountMeta<string> = string, TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountSigner extends string ? WritableSignerAccount<TAccountSigner> & AccountSignerMeta<TAccountSigner> : TAccountSigner, TAccountGame extends string ? WritableAccount<TAccountGame> : TAccountGame, TAccountPlayerX extends string ? WritableAccount<TAccountPlayerX> : TAccountPlayerX, TAccountPlayerO extends string ? WritableAccount<TAccountPlayerO> : TAccountPlayerO, TAccountJackpot extends string ? WritableAccount<TAccountJackpot> : TAccountJackpot, TAccountConfig extends string ? ReadonlyAccount<TAccountConfig> : TAccountConfig, TAccountActiveX extends string ? WritableAccount<TAccountActiveX> : TAccountActiveX, TAccountActiveO extends string ? WritableAccount<TAccountActiveO> : TAccountActiveO, TAccountLeaderboard extends string ? WritableAccount<TAccountLeaderboard> : TAccountLeaderboard, ...TRemainingAccounts]>;
 
 export type SettleAbandonedInstructionData = { discriminator: ReadonlyUint8Array;  };
 
@@ -34,7 +34,7 @@ export function getSettleAbandonedInstructionDataCodec(): FixedSizeCodec<SettleA
     return combineCodec(getSettleAbandonedInstructionDataEncoder(), getSettleAbandonedInstructionDataDecoder());
 }
 
-export type SettleAbandonedAsyncInput<TAccountSigner extends InstructionSignerInput = InstructionSignerInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput> =  {
+export type SettleAbandonedAsyncInput<TAccountSigner extends InstructionSignerInput = InstructionSignerInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput = InstructionAccountInput> =  {
   /**
  * The one-off session wallet (for moves and claims) or any wallet (for `settle_abandoned`).
  * Pays the tx fee and gets it refunded from the escrow.
@@ -45,9 +45,12 @@ playerX: TAccountPlayerX;
 playerO: TAccountPlayerO;
 jackpot?: TAccountJackpot;
 config?: TAccountConfig;
+activeX: TAccountActiveX;
+activeO: TAccountActiveO;
+leaderboard?: TAccountLeaderboard;
 }
 
-export async function getSettleAbandonedInstructionAsync<TAccountSigner extends InstructionSignerInput, TAccountGame extends InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: SettleAbandonedAsyncInput<TAccountSigner, TAccountGame, TAccountPlayerX, TAccountPlayerO, TAccountJackpot, TAccountConfig>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>>> {
+export async function getSettleAbandonedInstructionAsync<TAccountSigner extends InstructionSignerInput, TAccountGame extends InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: SettleAbandonedAsyncInput<TAccountSigner, TAccountGame, TAccountPlayerX, TAccountPlayerO, TAccountJackpot, TAccountConfig, TAccountActiveX, TAccountActiveO, TAccountLeaderboard>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -56,7 +59,7 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { signer: { value: input.signer ?? null, isSigner: true, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, playerX: { value: input.playerX ?? null, isSigner: false, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { signer: { value: input.signer ?? null, isSigner: true, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, playerX: { value: input.playerX ?? null, isSigner: false, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, leaderboard: { value: input.leaderboard ?? null, isSigner: false, isWritable: true } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -67,11 +70,14 @@ accounts.jackpot.value = await findJackpotPda({ programAddress });
 if (!accounts.config.value) {
 accounts.config.value = await findConfigPda({ programAddress });
 }
-
-return Object.freeze({ accounts: [getAccountMeta("signer", accounts.signer), getAccountMeta("game", accounts.game), getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("config", accounts.config)], data: getSettleAbandonedInstructionDataEncoder().encode({}), programAddress } as SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>>);
+if (!accounts.leaderboard.value) {
+accounts.leaderboard.value = await findLeaderboardPda({ programAddress });
 }
 
-export type SettleAbandonedInput<TAccountSigner extends InstructionSignerInput = InstructionSignerInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput> =  {
+return Object.freeze({ accounts: [getAccountMeta("signer", accounts.signer), getAccountMeta("game", accounts.game), getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("config", accounts.config), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("leaderboard", accounts.leaderboard)], data: getSettleAbandonedInstructionDataEncoder().encode({}), programAddress } as SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>>);
+}
+
+export type SettleAbandonedInput<TAccountSigner extends InstructionSignerInput = InstructionSignerInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput = InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput = InstructionAccountInput> =  {
   /**
  * The one-off session wallet (for moves and claims) or any wallet (for `settle_abandoned`).
  * Pays the tx fee and gets it refunded from the escrow.
@@ -82,9 +88,12 @@ playerX: TAccountPlayerX;
 playerO: TAccountPlayerO;
 jackpot: TAccountJackpot;
 config: TAccountConfig;
+activeX: TAccountActiveX;
+activeO: TAccountActiveO;
+leaderboard: TAccountLeaderboard;
 }
 
-export function getSettleAbandonedInstruction<TAccountSigner extends InstructionSignerInput, TAccountGame extends InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: SettleAbandonedInput<TAccountSigner, TAccountGame, TAccountPlayerX, TAccountPlayerO, TAccountJackpot, TAccountConfig>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>> {
+export function getSettleAbandonedInstruction<TAccountSigner extends InstructionSignerInput, TAccountGame extends InstructionAccountInput, TAccountPlayerX extends InstructionAccountInput, TAccountPlayerO extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: SettleAbandonedInput<TAccountSigner, TAccountGame, TAccountPlayerX, TAccountPlayerO, TAccountJackpot, TAccountConfig, TAccountActiveX, TAccountActiveO, TAccountLeaderboard>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -93,13 +102,13 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { signer: { value: input.signer ?? null, isSigner: true, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, playerX: { value: input.playerX ?? null, isSigner: false, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { signer: { value: input.signer ?? null, isSigner: true, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, playerX: { value: input.playerX ?? null, isSigner: false, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, leaderboard: { value: input.leaderboard ?? null, isSigner: false, isWritable: true } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
 
 
-return Object.freeze({ accounts: [getAccountMeta("signer", accounts.signer), getAccountMeta("game", accounts.game), getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("config", accounts.config)], data: getSettleAbandonedInstructionDataEncoder().encode({}), programAddress } as SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>>);
+return Object.freeze({ accounts: [getAccountMeta("signer", accounts.signer), getAccountMeta("game", accounts.game), getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("config", accounts.config), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("leaderboard", accounts.leaderboard)], data: getSettleAbandonedInstructionDataEncoder().encode({}), programAddress } as SettleAbandonedInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountSigner, InstructionAccountInputAddress<TAccountSigner>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>>);
 }
 
 export type ParsedSettleAbandonedInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -114,12 +123,15 @@ playerX: TAccountMetas[2];
 playerO: TAccountMetas[3];
 jackpot: TAccountMetas[4];
 config: TAccountMetas[5];
+activeX: TAccountMetas[6];
+activeO: TAccountMetas[7];
+leaderboard: TAccountMetas[8];
 };
 data: SettleAbandonedInstructionData; };
 
 export function parseSettleAbandonedInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>): ParsedSettleAbandonedInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
-  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 6 });
+  if (instruction.accounts.length < 9) {
+  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 9 });
 }
 let accountIndex = 0;
 const getNextAccount = () => {
@@ -127,5 +139,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { signer: getNextAccount(), game: getNextAccount(), playerX: getNextAccount(), playerO: getNextAccount(), jackpot: getNextAccount(), config: getNextAccount() }, data: getSettleAbandonedInstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { signer: getNextAccount(), game: getNextAccount(), playerX: getNextAccount(), playerO: getNextAccount(), jackpot: getNextAccount(), config: getNextAccount(), activeX: getNextAccount(), activeO: getNextAccount(), leaderboard: getNextAccount() }, data: getSettleAbandonedInstructionDataDecoder().decode(instruction.data) };
 }

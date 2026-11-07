@@ -6,6 +6,8 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './activeGame';
 export * from './config';
 export * from './game';
 export * from './jackpot';
+export * from './leaderboard';
