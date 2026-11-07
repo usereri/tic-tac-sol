@@ -11,7 +11,7 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
         accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
-        GAME_SEED, JACKPOT_SEED, O, STATS_SEED, X,
+        GAME_SEED, JACKPOT_SEED, O, PlayerStats, STATS_SEED, X,
     },
 };
 
@@ -132,6 +132,11 @@ impl Env {
     fn game(&self, game: &Pubkey) -> Game {
         let account = self.svm.get_account(game).unwrap();
         Game::try_deserialize(&mut account.data.as_slice()).unwrap()
+    }
+
+    fn stats(&self, wallet: &Pubkey) -> PlayerStats {
+        let account = self.svm.get_account(&stats_pda(wallet)).unwrap();
+        PlayerStats::try_deserialize(&mut account.data.as_slice()).unwrap()
     }
 
     fn jackpot(&self) -> Jackpot {
@@ -567,4 +572,143 @@ fn players_choose_the_stake_within_limits() {
     let bx = env.balance(&m.x.wallet.pubkey());
     env.moves(&m, &[0, 3, 1, 4, 2]);
     assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + 500_000_000 - 5 * TX_FEE);
+}
+
+#[test]
+fn stats_after_a_won_game() {
+    let mut env = Env::new(default_args());
+    let m = env.start();
+    let (xw, ow) = (m.x.wallet.pubkey(), m.o.wallet.pubkey());
+
+    let s = env.stats(&xw);
+    assert_eq!(s.wallet, xw);
+    assert_eq!(s.active_game, m.game);
+    assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, 0));
+
+    env.moves(&m, &[0, 3, 1, 4, 2]);
+    env.try_close(&m, &m.o.wallet).unwrap();
+    assert!(env.svm.get_account(&m.game).map_or(true, |a| a.lamports == 0));
+
+    let sx = env.stats(&xw);
+    assert_eq!(sx.active_game, Pubkey::default());
+    assert_eq!((sx.games_played, sx.games_won, sx.lamports_staked), (1, 1, STAKE));
+    assert_eq!(sx.lamports_won, 2 * STAKE - 5 * TX_FEE);
+
+    let so = env.stats(&ow);
+    assert_eq!(so.wallet, ow);
+    assert_eq!(so.active_game, Pubkey::default());
+    assert_eq!((so.games_played, so.games_won, so.lamports_staked, so.lamports_won), (1, 0, STAKE, 0));
+}
+
+#[test]
+fn one_game_per_wallet() {
+    let mut env = Env::new(default_args());
+    let m = env.start(); // nonce 1
+    let o2 = Player::new(&mut env.svm);
+    let xw = m.x.wallet.pubkey();
+
+    let (ix, _) = env.start_ix(&m.x, &o2, 2);
+    assert_err(env.send(ix, &[&m.x.wallet, &o2.wallet]), "PlayerBusy");
+    // The busy opponent side is rejected too.
+    let x2 = Player::new(&mut env.svm);
+    let (ix, _) = env.start_ix(&x2, &m.o, 1);
+    assert_err(env.send(ix, &[&x2.wallet, &m.o.wallet]), "PlayerBusy");
+    assert_eq!(env.stats(&xw).games_played, 1);
+
+    env.moves(&m, &[0, 3, 1, 4, 2]);
+    let (ix, game_b) = env.start_ix(&m.x, &o2, 2);
+    env.send(ix, &[&m.x.wallet, &o2.wallet]).unwrap();
+
+    let s = env.stats(&xw);
+    assert_eq!(s.active_game, game_b);
+    assert_eq!(s.games_played, 2);
+    assert_eq!(env.stats(&o2.wallet.pubkey()).games_played, 1);
+}
+
+#[test]
+fn stats_after_split_by_timeout_and_by_settle() {
+    let mut env = Env::new(default_args());
+
+    // Timeout without any move.
+    let m = env.start();
+    env.warp(13);
+    env.try_claim(&m, &m.o.session).unwrap();
+    let each = (2 * STAKE - TX_FEE) / 2;
+    for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
+        let s = env.stats(&w);
+        assert_eq!(s.active_game, Pubkey::default());
+        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, each));
+    }
+
+    // Abandoned game settled by a cranker.
+    let m = env.start();
+    let cranker = Keypair::new();
+    env.svm.airdrop(&cranker.pubkey(), SOL).unwrap();
+    env.moves(&m, &[0, 4]);
+    env.warp(150 + 13);
+    env.try_settle(&m, &cranker).unwrap();
+    assert_eq!(env.game(&m.game).status, GameStatus::Split);
+    let each = (2 * STAKE - 3 * TX_FEE) / 2;
+    for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
+        let s = env.stats(&w);
+        assert_eq!(s.active_game, Pubkey::default());
+        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, each));
+    }
+}
+
+#[test]
+fn stats_after_drained_game() {
+    let mut env = Env::new(Settings {
+        fee_refund: 9_500_000,
+        jackpot_every: 1,
+        ..default_args()
+    });
+    let m = env.start();
+    for _ in 0..10 {
+        let g = env.game(&m.game);
+        env.moves(&m, &[non_winning_cell(&g)]);
+    }
+    assert_eq!(env.game(&m.game).status, GameStatus::Drained);
+    for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
+        let s = env.stats(&w);
+        assert_eq!(s.active_game, Pubkey::default());
+        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, 0));
+    }
+}
+
+#[test]
+fn stats_accumulate_across_games() {
+    let mut env = Env::new(default_args());
+    let x = Player::new(&mut env.svm);
+    let o = Player::new(&mut env.svm);
+    let (xw, ow) = (x.wallet.pubkey(), o.wallet.pubkey());
+
+    let (ix, game) = env.start_ix_with(&x, &o, 1, STAKE);
+    env.send(ix, &[&x.wallet, &o.wallet]).unwrap();
+    let m1 = Match { x, o, game };
+    env.moves(&m1, &[0, 3, 1, 4, 2]); // X wins
+    let paid1 = 2 * STAKE - 5 * TX_FEE;
+
+    let (ix, game) = env.start_ix_with(&m1.x, &m1.o, 2, 200_000_000);
+    env.send(ix, &[&m1.x.wallet, &m1.o.wallet]).unwrap();
+    let m2 = Match { x: m1.x, o: m1.o, game };
+    env.moves(&m2, &[0, 3, 1, 4]); // no line yet; X to move
+    env.warp(13);
+    // X to move and idle after having moved: O claims the timeout win.
+    env.try_claim(&m2, &m2.o.session).unwrap();
+    let g = env.game(&m2.game);
+    assert_eq!(g.status, GameStatus::WonByTimeout);
+    assert_eq!(g.winner, O);
+    let paid2 = 400_000_000 - g.fees_paid;
+
+    let sx = env.stats(&xw);
+    assert_eq!(sx.active_game, Pubkey::default());
+    assert_eq!((sx.games_played, sx.games_won), (2, 1));
+    assert_eq!(sx.lamports_staked, STAKE + 200_000_000);
+    assert_eq!(sx.lamports_won, paid1);
+
+    let so = env.stats(&ow);
+    assert_eq!((so.games_played, so.games_won), (2, 1));
+    assert_eq!(so.lamports_staked, STAKE + 200_000_000);
+    assert_eq!(so.lamports_won, paid2);
 }
