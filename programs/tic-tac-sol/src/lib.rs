@@ -24,8 +24,8 @@ pub mod tic_tac_sol {
         crate::instructions::init_config::handle_update_config(ctx, args)
     }
 
-    pub fn start_game(ctx: Context<StartGame>, nonce: u64) -> Result<()> {
-        crate::instructions::start_game::handle_start_game(ctx, nonce)
+    pub fn start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Result<()> {
+        crate::instructions::start_game::handle_start_game(ctx, nonce, stake)
     }
 
     pub fn make_move(ctx: Context<PlayGame>, cell: u8) -> Result<()> {

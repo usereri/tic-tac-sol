@@ -45,7 +45,7 @@ impl<'info> StartGame<'info> {
     }
 }
 
-pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64) -> Result<()> {
+pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Result<()> {
     let a = &ctx.accounts;
     let keys = [
         a.player_x.key(),
@@ -60,9 +60,13 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64) -> Result<()> {
     }
 
     let args = a.config.args;
+    require!(
+        (args.min_stake..=args.max_stake).contains(&stake),
+        ErrorCode::InvalidStake
+    );
     let game_info = a.game.to_account_info();
-    a.pay(a.player_x.to_account_info(), game_info.clone(), args.stake)?;
-    a.pay(a.player_o.to_account_info(), game_info.clone(), args.stake)?;
+    a.pay(a.player_x.to_account_info(), game_info.clone(), stake)?;
+    a.pay(a.player_o.to_account_info(), game_info.clone(), stake)?;
     a.pay(a.player_x.to_account_info(), a.session_x.to_account_info(), args.gas_deposit)?;
     a.pay(a.player_o.to_account_info(), a.session_o.to_account_info(), args.gas_deposit)?;
 
@@ -80,8 +84,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64) -> Result<()> {
             .ok_or(ErrorCode::MathOverflow)?;
     }
 
-    let initial_pot = args
-        .stake
+    let initial_pot = stake
         .checked_mul(2)
         .and_then(|p| p.checked_add(jackpot_bonus))
         .ok_or(ErrorCode::MathOverflow)?;
@@ -104,6 +107,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64) -> Result<()> {
         moved_o: false,
         move_count: 0,
         initial_pot,
+        stake,
         jackpot_bonus,
         fees_paid: 0,
         last_action_slot: Clock::get()?.slot,

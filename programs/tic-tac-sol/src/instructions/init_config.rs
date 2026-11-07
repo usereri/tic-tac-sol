@@ -22,7 +22,8 @@ pub struct UpdateConfig<'info> {
 
 pub fn validate(args: &Settings) -> Result<()> {
     let min_wallet = Rent::get()?.minimum_balance(0);
-    require!(args.stake > 0, ErrorCode::InvalidConfig);
+    require!(args.min_stake > 0, ErrorCode::InvalidConfig);
+    require!(args.max_stake >= args.min_stake, ErrorCode::InvalidConfig);
     require!(args.gas_deposit >= min_wallet, ErrorCode::InvalidConfig);
     require!(args.turn_slots > 0, ErrorCode::InvalidConfig);
     require!(args.abandon_slots > 0, ErrorCode::InvalidConfig);

@@ -4,8 +4,10 @@ use crate::{constants::*, error::ErrorCode};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 pub struct Settings {
-    /// Lamports each player puts into the pot.
-    pub stake: u64,
+    /// Smallest stake (lamports, per player) a game may use.
+    pub min_stake: u64,
+    /// Largest stake (lamports, per player) a game may use.
+    pub max_stake: u64,
     /// Lamports each player sends to their one-off session wallet (must keep it rent-exempt).
     pub gas_deposit: u64,
     /// Lamports the escrow pays back to whoever signs a move / claim (the real tx fee).
@@ -72,6 +74,8 @@ pub struct Game {
     pub moved_o: bool,
     pub move_count: u32,
     pub initial_pot: u64,
+    /// Lamports each player staked, chosen by the players within the config limits.
+    pub stake: u64,
     pub jackpot_bonus: u64,
     pub fees_paid: u64,
     pub last_action_slot: u64,

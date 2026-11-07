@@ -4,6 +4,8 @@ use anchor_lang::prelude::*;
 pub enum ErrorCode {
     #[msg("Invalid config value")]
     InvalidConfig,
+    #[msg("Stake is outside the allowed range")]
+    InvalidStake,
     #[msg("Only the config admin can do this")]
     Unauthorized,
     #[msg("Players and session keys must all be different accounts")]
