@@ -29,7 +29,8 @@ const wsUrl = process.env.WS_URL ?? rpcUrl.replace(/^http/, 'ws').replace(/:8899
 const keypairPath = process.argv[2] ?? `${homedir()}/.config/solana/id.json`
 
 const settings: SettingsArgs = {
-  stake: 50_000_000n, // 0.05 SOL
+  minStake: 10_000_000n, // 0.01 SOL
+  maxStake: 1_000_000_000n, // 1 SOL
   gasDeposit: 1_000_000n, // 0.001 SOL, keeps the one-off wallet rent-exempt
   feeRefund: 5_000n, // the real base fee per signature
   turnSlots: BigInt(process.env.TURN_SLOTS ?? 12), // ≈ 5 s; raise it locally for slow manual testing
