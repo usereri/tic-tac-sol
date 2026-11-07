@@ -6,7 +6,13 @@ import {
   fetchMaybeJackpot,
   findConfigPda,
   findJackpotPda,
+  findActiveXPda,
+  findActiveOPda,
+  findLeaderboardPda,
+  fetchMaybeActiveGame,
+  fetchMaybeLeaderboard,
   getClaimTimeoutInstructionAsync,
+  getSettleAbandonedInstructionAsync,
   getCloseGameInstruction,
   getGameDecoder,
   getGameSize,
@@ -131,22 +137,55 @@ export function useSlot() {
   return slot
 }
 
+/** The game this wallet is still playing, if any. The lock account only exists during a game. */
+export async function activeGameOf(wallet: Address): Promise<Address | null> {
+  const [pda] = await findActiveXPda({ playerX: wallet })
+  const lock = await fetchMaybeActiveGame(rpc, pda)
+  return lock.exists ? lock.data.game : null
+}
+
+export type LeaderRow = { wallet: Address; played: number; won: number; staked: bigint; paid: bigint }
+
+/** The on-chain top-50 board (one shared account). */
+export async function fetchLeaderboard(): Promise<LeaderRow[]> {
+  const [pda] = await findLeaderboardPda()
+  const board = await fetchMaybeLeaderboard(rpc, pda)
+  if (!board.exists) return []
+  return board.data.entries.slice(0, board.data.len).map((e) => ({
+    wallet: e.wallet,
+    played: e.played,
+    won: e.won,
+    staked: e.staked,
+    paid: e.paid,
+  }))
+}
+
 /* ---------------- Writes ---------------- */
 
 type GameRef = { address: Address; game: Game }
 
-function playAccounts({ address, game }: GameRef) {
-  return { game: address, playerX: game.playerX, playerO: game.playerO }
+async function playAccounts({ address, game }: GameRef) {
+  const [[activeX], [activeO]] = await Promise.all([
+    findActiveXPda({ playerX: game.playerX }),
+    findActiveOPda({ playerO: game.playerO }),
+  ])
+  return { game: address, playerX: game.playerX, playerO: game.playerO, activeX, activeO }
 }
 
 export async function makeMove(session: KeyPairSigner, ref: GameRef, cell: number): Promise<Sent> {
-  const ix = await getMakeMoveInstructionAsync({ signer: session, ...playAccounts(ref), cell })
+  const ix = await getMakeMoveInstructionAsync({ signer: session, ...(await playAccounts(ref)), cell })
   return send(session, [ix])
 }
 
 export async function claimTimeout(session: KeyPairSigner, ref: GameRef): Promise<Sent> {
-  const ix = await getClaimTimeoutInstructionAsync({ signer: session, ...playAccounts(ref) })
+  const ix = await getClaimTimeoutInstructionAsync({ signer: session, ...(await playAccounts(ref)) })
   return send(session, [ix])
+}
+
+/** Both players left: 50/50 after the claim window. Any signer works; the escrow refunds its fee. */
+export async function settleAbandoned(signer: KeyPairSigner, ref: GameRef): Promise<Sent> {
+  const ix = await getSettleAbandonedInstructionAsync({ signer, ...(await playAccounts(ref)) })
+  return send(signer, [ix])
 }
 
 /** Returns the game account's rent to X. Any signer can pay the fee. */

@@ -2,6 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   createClient,
   createKeyPairSignerFromPrivateKeyBytes,
+  createSignableMessage,
+  getBase58Decoder,
+  isMessageModifyingSigner,
+  isMessagePartialSigner,
   lamports,
   type Address,
   type KeyPairSigner,
@@ -104,6 +108,22 @@ export function useWallet() {
   const ctx = useContext(WalletContext)
   if (!ctx) throw new Error('useWallet outside WalletProvider')
   return ctx
+}
+
+/** Signs human-readable text with the player's wallet (a Phantom popup); returns the base58 signature. */
+export async function signText(wallet: PlayerWallet, text: string): Promise<string> {
+  const signer: unknown = wallet.signer
+  const message = createSignableMessage(text)
+  let signature: Uint8Array | undefined
+  if (isMessagePartialSigner(signer as never)) {
+    const [sigs] = await (signer as { signMessages: (m: unknown[]) => Promise<Record<string, Uint8Array>[]> }).signMessages([message])
+    signature = sigs[wallet.address]
+  } else if (isMessageModifyingSigner(signer as never)) {
+    const [signed] = await (signer as { modifyAndSignMessages: (m: unknown[]) => Promise<{ signatures: Record<string, Uint8Array> }[]> }).modifyAndSignMessages([message])
+    signature = signed.signatures[wallet.address]
+  }
+  if (!signature) throw new Error(`${wallet.name} can't sign messages.`)
+  return getBase58Decoder().decode(signature)
 }
 
 /** Wallet Standard wallets to show in the connect menu. */

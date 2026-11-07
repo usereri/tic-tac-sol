@@ -3,6 +3,7 @@ import type { Envelope, Peer, Transport, TransportEvents } from './matchmaking-c
 
 const RETRY_MS = 3000
 const OUTBOX_MAX = 32
+const CHECK_MS = 1000
 const HEARTBEAT_MS = 5000
 const EXPIRE_MS = 15_000
 
@@ -11,7 +12,8 @@ type Entry = Peer & { hb: number }
 
 const isEntry = (p: any): p is Entry =>
   typeof p?.id === 'string' && typeof p.wallet === 'string' && typeof p.session === 'string' &&
-  typeof p.stake === 'string' && typeof p.joinedAt === 'number' && typeof p.hb === 'number'
+  typeof p.stake === 'string' && typeof p.joinedAt === 'number' && typeof p.hb === 'number' &&
+  typeof p.proof?.message === 'string' && typeof p.proof.signature === 'string'
 
 const isEnvelope = (m: any): m is Envelope => typeof m?.to === 'string' && typeof m.body === 'string' && typeof m.sig === 'string'
 
@@ -20,11 +22,13 @@ const isEnvelope = (m: any): m is Envelope => typeof m?.to === 'string' && typeo
  * Everyone subscribes on load, so spectators see the queue without joining it.
  *
  * The server only drops a presence when its socket dies, which can take a while, so queued
- * players re-track every few seconds and anyone silent for 15 s counts as gone.
+ * players re-track every few seconds and anyone silent for 15 s counts as gone. It also drops
+ * a track sent right after an untrack, so we compare our own presence with what we want and
+ * redo the track or untrack when they differ.
  *
  * Broadcast and presence on a public channel are unauthenticated: anyone with the anon key can
- * post anything. The matchmaker signs direct messages with session keys, and O's `checkOffer`
- * in Play.tsx inspects the transaction before co-signing. Keep both.
+ * post anything. The matchmaker checks wallet-signed join proofs and session-signed messages,
+ * and O's `checkOffer` inspects the transaction before co-signing. Keep all three.
  */
 export class SupabaseTransport implements Transport {
   private client: RealtimeClient
@@ -34,12 +38,14 @@ export class SupabaseTransport implements Transport {
   private on: TransportEvents | null = null
   private me: Peer | null = null
   private hb = 0
+  /** When we last sent a track or untrack. */
+  private sentAt = 0
   /** Every id in presence, with when we last saw its counter move. */
   private live = new Map<string, { peer: Peer; hb: number; at: number }>()
   private outbox: Envelope[] = []
   private subscribed = false
   private closed = false
-  private timer = setInterval(() => this.publish(), HEARTBEAT_MS)
+  private timer = setInterval(() => this.tend(), CHECK_MS)
 
   constructor(url: string, apikey: string, topic: string) {
     const endpoint = new URL('realtime/v1', url.replace(/\/?$/, '/'))
@@ -58,7 +64,7 @@ export class SupabaseTransport implements Transport {
     // Not subscribed yet: the SUBSCRIBED handler applies it.
     if (!this.subscribed || !this.channel) return
     if (peer) this.publish()
-    else void this.channel.untrack()
+    else this.unpublish()
   }
 
   peers() {
@@ -106,7 +112,24 @@ export class SupabaseTransport implements Transport {
 
   /** Track ourselves with a bumped counter, which tells the others we are still here. */
   private publish() {
-    if (this.me && this.subscribed && this.channel) void this.channel.track({ ...this.me, hb: ++this.hb })
+    if (!this.me || !this.subscribed || !this.channel) return
+    this.sentAt = Date.now()
+    void this.channel.track({ ...this.me, hb: ++this.hb })
+  }
+
+  private unpublish() {
+    this.sentAt = Date.now()
+    void this.channel?.untrack()
+  }
+
+  /** Every second: heartbeat when due, and redo whatever the server dropped of our last track or untrack. */
+  private tend() {
+    if (!this.subscribed || !this.channel) return
+    const since = Date.now() - this.sentAt
+    if (since < CHECK_MS) return
+    const mine = this.channel.presenceState<Partial<Entry>>()[this.key] ?? []
+    if (this.me && (since >= HEARTBEAT_MS || !mine.some((e) => e.hb === this.hb))) this.publish()
+    else if (!this.me && mine.length) this.unpublish()
   }
 
   /** Refresh an id only when its counter grows, so a stale or replayed entry still expires. */
@@ -119,8 +142,9 @@ export class SupabaseTransport implements Transport {
       present.add(e.id)
       const known = this.live.get(e.id)
       if (!known || e.hb > known.hb) {
-        const { id, wallet, session, stake, joinedAt } = e
-        this.live.set(id, { peer: { id, wallet, session, stake, joinedAt }, hb: e.hb, at: now })
+        const { id, wallet, session, stake, joinedAt, proof } = e
+        const peer = { id, wallet, session, stake, joinedAt, proof: { message: proof.message, signature: proof.signature } }
+        this.live.set(id, { peer, hb: e.hb, at: now })
       }
     }
     for (const id of this.live.keys()) if (!present.has(id)) this.live.delete(id)

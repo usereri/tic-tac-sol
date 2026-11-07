@@ -1,4 +1,5 @@
 import {
+  getBase58Encoder,
   getBase64Decoder,
   getBase64Encoder,
   getPublicKeyFromAddress,
@@ -8,6 +9,7 @@ import {
   verifySignature,
   type Address,
   type KeyPairSigner,
+  type ReadonlyUint8Array,
 } from '@solana/kit'
 
 /**
@@ -17,11 +19,15 @@ import {
  * The pairing logic lives here and reaches other players through a `Transport`, so the same
  * rules run over a BroadcastChannel (local testing) or Supabase Realtime (devnet).
  *
- * A peer's id is its session address and every direct message is signed with that session key,
- * so nobody can propose, cancel or start on another player's behalf. The queue itself is not
- * signed: a fake entry can waste someone's time, never make them pay. O's `checkOffer` still
- * guards the transaction it co-signs.
+ * Every queue entry carries a proof signed by the player's wallet, binding it to one session key,
+ * stake and join time; entries without a valid proof are ignored. A peer's id is that session
+ * address, and every direct message is signed with the session key, so nobody can join, propose,
+ * cancel or start on another player's behalf. O's `checkOffer` still guards the transaction it
+ * co-signs.
  */
+
+/** The wallet's signature over `joinMessage(...)`, base58. */
+export type JoinProof = { message: string; signature: string }
 
 export type Peer = {
   /** The session address, so a message from this id must be signed by that key. */
@@ -31,6 +37,12 @@ export type Peer = {
   /** Lamports, in decimal. */
   stake: string
   joinedAt: number
+  proof: JoinProof
+}
+
+/** What the wallet signs to enter the queue. Shown to the player, so keep it readable. */
+export function joinMessage(p: { wallet: string; session: string; stake: string; joinedAt: number; cluster: string }) {
+  return `Tic-Tac-Sol: join the queue\nwallet: ${p.wallet}\nsession: ${p.session}\nstake: ${p.stake} lamports\ncluster: ${p.cluster}\njoined: ${p.joinedAt}`
 }
 
 export type Direct =
@@ -73,16 +85,30 @@ const MAX_AGE_MS = 60_000
 const utf8 = getUtf8Encoder()
 const toBase64 = getBase64Decoder()
 const fromBase64 = getBase64Encoder()
+const fromBase58 = getBase58Encoder()
 
 const byAge = (a: Peer, b: Peer) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id)
+
+async function verifies(signer: string, sig: ReadonlyUint8Array, data: string) {
+  const key = await getPublicKeyFromAddress(signer as Address)
+  return verifySignature(key, signatureBytes(sig), utf8.encode(data))
+}
+
+/** Whether the wallet really signed this entry's proof. */
+async function proven({ wallet, proof }: Peer) {
+  try {
+    return await verifies(wallet, fromBase58.encode(proof.signature), proof.message)
+  } catch {
+    return false
+  }
+}
 
 /** The message in `env` if its sender signed it within the last minute, else null. */
 async function open(env: Envelope): Promise<Message | null> {
   try {
     const msg = JSON.parse(env.body) as Message
     if (msg.to !== env.to || typeof msg.payload?.type !== 'string' || !(Math.abs(Date.now() - msg.ts) <= MAX_AGE_MS)) return null
-    const key = await getPublicKeyFromAddress(msg.from as Address)
-    return (await verifySignature(key, signatureBytes(fromBase64.encode(env.sig)), utf8.encode(env.body))) ? msg : null
+    return (await verifies(msg.from, fromBase64.encode(env.sig), env.body)) ? msg : null
   } catch {
     return null
   }
@@ -90,6 +116,7 @@ async function open(env: Envelope): Promise<Message | null> {
 
 export class Matchmaker {
   private transport: Transport
+  private cluster: string
   private me: Peer | null = null
   private signer: KeyPairSigner | null = null
   private paired: Pairing | null = null
@@ -97,29 +124,44 @@ export class Matchmaker {
   private asked = new Map<string, { peer: Peer; until: number }>()
   /** Signatures already handled, so a message can't be replayed while it's fresh. */
   private seen = new Map<string, number>()
+  /** Join proofs by signature and message: true or false once checked, null while checking. */
+  private proofs = new Map<string, boolean | null>()
   /** Signing and verifying are async; this keeps them, and so the messages, in order. */
   private work = Promise.resolve()
   private lastQueue = ''
+  private lastDuplicate: string | undefined
   private timer: ReturnType<typeof setInterval>
   private sizeListeners = new Set<(count: number) => void>()
   private queueListeners = new Set<(peers: Peer[]) => void>()
+  private duplicateListeners = new Set<(other: Peer | null) => void>()
   private pairListeners = new Set<(p: Pairing) => void>()
   private directListeners = new Set<(msg: Direct, from: Peer) => void>()
 
-  constructor(transport: Transport) {
+  /** `cluster` must match what players sign in their join proofs. */
+  constructor(transport: Transport, cluster: string) {
     this.transport = transport
+    this.cluster = cluster
     transport.start({ peers: () => this.notify(), direct: (msg) => this.receive(msg) })
     this.timer = setInterval(() => this.tick(), TICK_MS)
   }
 
-  /** Enter the queue. Pass the original `joinedAt` to keep your place after a failed match. */
-  join({ wallet, session, stake, joinedAt = Date.now() }: { wallet: string; session: KeyPairSigner; stake: bigint; joinedAt?: number }) {
-    this.me = { id: session.address, wallet, session: session.address, stake: stake.toString(), joinedAt }
+  /**
+   * Enter the queue with a proof signed by the wallet over `joinMessage(...)`. Rejoin with the
+   * same `joinedAt` and proof to keep your place after a failed match.
+   */
+  join({ wallet, session, stake, joinedAt, proof }: { wallet: string; session: KeyPairSigner; stake: bigint; joinedAt: number; proof: JoinProof }) {
+    const me = { id: session.address, wallet, session: session.address, stake: stake.toString(), joinedAt, proof }
+    this.me = me
     this.signer = session
     this.paired = null
     this.asked.clear()
-    this.transport.track(this.me)
+    this.transport.track(me)
     this.tick()
+    this.serial(async () => {
+      if (proof.message !== joinMessage({ ...me, cluster: this.cluster }) || !(await proven(me))) {
+        console.warn('matchmaking: our join proof does not verify, so nobody will see us')
+      }
+    })
   }
 
   leave() {
@@ -150,6 +192,16 @@ export class Matchmaker {
     return () => void this.queueListeners.delete(fn)
   }
 
+  /**
+   * An older entry of our own wallet, from another tab or device, or null. While there is one
+   * we wait behind it and are never paired. Fires now and whenever it changes.
+   */
+  onDuplicate(fn: (other: Peer | null) => void) {
+    this.duplicateListeners.add(fn)
+    fn(this.duplicate())
+    return () => void this.duplicateListeners.delete(fn)
+  }
+
   onPaired(fn: (p: Pairing) => void) {
     this.pairListeners.add(fn)
     return () => void this.pairListeners.delete(fn)
@@ -169,8 +221,23 @@ export class Matchmaker {
   /** Other valid entries, one per id. */
   private others() {
     const peers = new Map<string, Peer>()
-    for (const p of this.transport.peers()) if (p.id === p.session && p.id !== this.me?.id) peers.set(p.id, p)
+    for (const p of this.transport.peers()) if (p.id !== this.me?.id && this.valid(p)) peers.set(p.id, p)
     return [...peers.values()]
+  }
+
+  /** Whether the entry's wallet signed exactly its fields. The signature is checked once, in the background. */
+  private valid(p: Peer) {
+    if (p.id !== p.session || p.proof?.message !== joinMessage({ ...p, cluster: this.cluster })) return false
+    const key = `${p.proof.signature} ${p.proof.message}`
+    const known = this.proofs.get(key)
+    if (known !== undefined) return known === true
+    this.proofs.set(key, null)
+    this.serial(async () => {
+      const ok = await proven(p)
+      this.proofs.set(key, ok)
+      if (ok) this.notify()
+    })
+    return false
   }
 
   private queue() {
@@ -179,19 +246,31 @@ export class Matchmaker {
     return peers.sort(byAge)
   }
 
-  /** Our stake's line, oldest first, keeping only each wallet's oldest entry so nobody meets themselves. */
+  /** Our stake's line, oldest first. Only a wallet's oldest entry counts, so nobody meets themselves. */
   private line(me: Peer) {
     const wallets = new Set<string>()
     return this.queue().filter((p) => {
-      if (p.stake !== me.stake || wallets.has(p.wallet)) return false
+      const first = !wallets.has(p.wallet)
       wallets.add(p.wallet)
-      return true
+      return first && p.stake === me.stake
     })
+  }
+
+  private duplicate() {
+    const me = this.me
+    if (!me || this.paired) return null
+    const first = this.queue().find((p) => p.wallet === me.wallet)
+    return first && first.id !== me.id ? first : null
   }
 
   private notify() {
     const queue = this.queue()
     this.sizeListeners.forEach((fn) => fn(queue.length))
+    const duplicate = this.duplicate()
+    if (duplicate?.id !== this.lastDuplicate) {
+      this.lastDuplicate = duplicate?.id
+      this.duplicateListeners.forEach((fn) => fn(duplicate))
+    }
     const key = JSON.stringify(queue)
     if (key === this.lastQueue) return
     this.lastQueue = key

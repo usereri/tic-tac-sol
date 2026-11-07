@@ -10,7 +10,7 @@ import { Matchmaker } from './matchmaking-core'
 import { SupabaseTransport } from './matchmaking-supabase'
 import { CLUSTER } from './solana'
 
-export type { Direct, Pairing, Peer } from './matchmaking-core'
+export { joinMessage, type Direct, type JoinProof, type Pairing, type Peer } from './matchmaking-core'
 
 const SUPABASE_URL: string | undefined = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY: string | undefined = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -19,6 +19,7 @@ export const matchmaker = new Matchmaker(
   SUPABASE_URL && SUPABASE_KEY
     ? new SupabaseTransport(SUPABASE_URL, SUPABASE_KEY, `ttsol-queue-${CLUSTER}`)
     : new BroadcastTransport(),
+  CLUSTER,
 )
 
 // Leave the queue when Vite hot-swaps this module, so no ghost of us stays in it.
