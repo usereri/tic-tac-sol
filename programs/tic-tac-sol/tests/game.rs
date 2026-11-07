@@ -11,7 +11,7 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
         accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
-        GAME_SEED, JACKPOT_SEED, O, PlayerStats, STATS_SEED, X,
+        ACTIVE_SEED, BoardEntry, Leaderboard, BOARD_SIZE, GAME_SEED, JACKPOT_SEED, LEADERBOARD_SEED, O, X,
     },
 };
 
@@ -19,9 +19,12 @@ const SOL: u64 = 1_000_000_000;
 const TX_FEE: u64 = 5_000;
 const STAKE: u64 = 50_000_000;
 
-fn stats_pda(wallet: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[STATS_SEED, wallet.as_ref()], &tic_tac_sol::id()).0
+fn active_pda(wallet: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[ACTIVE_SEED, wallet.as_ref()], &tic_tac_sol::id()).0
 }
+
+/// Size of an `ActiveGame` account: discriminator + game key.
+const ACTIVE_LEN: usize = 8 + 32;
 
 fn default_args() -> Settings {
     Settings {
@@ -57,6 +60,7 @@ struct Env {
     admin: Keypair,
     config: Pubkey,
     jackpot: Pubkey,
+    leaderboard: Pubkey,
 }
 
 struct Match {
@@ -77,11 +81,13 @@ impl Env {
         svm.airdrop(&admin.pubkey(), 10 * SOL).unwrap();
         let config = Pubkey::find_program_address(&[CONFIG_SEED], &tic_tac_sol::id()).0;
         let jackpot = Pubkey::find_program_address(&[JACKPOT_SEED], &tic_tac_sol::id()).0;
+        let leaderboard = Pubkey::find_program_address(&[LEADERBOARD_SEED], &tic_tac_sol::id()).0;
         let mut env = Self {
             svm,
             admin,
             config,
             jackpot,
+            leaderboard,
         };
         let ix = env.ix(
             instruction::InitConfig { args }.data(),
@@ -89,6 +95,7 @@ impl Env {
                 admin: env.admin.pubkey(),
                 config,
                 jackpot,
+                leaderboard,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -134,9 +141,19 @@ impl Env {
         Game::try_deserialize(&mut account.data.as_slice()).unwrap()
     }
 
-    fn stats(&self, wallet: &Pubkey) -> PlayerStats {
-        let account = self.svm.get_account(&stats_pda(wallet)).unwrap();
-        PlayerStats::try_deserialize(&mut account.data.as_slice()).unwrap()
+    fn board(&self) -> Leaderboard {
+        let account = self.svm.get_account(&self.leaderboard).unwrap();
+        Leaderboard::try_deserialize(&mut account.data.as_slice()).unwrap()
+    }
+
+    /// The wallet's leaderboard entry, if it's on the board.
+    fn entry(&self, wallet: &Pubkey) -> Option<BoardEntry> {
+        let b = self.board();
+        b.entries[..b.len as usize].iter().find(|e| e.wallet == *wallet).copied()
+    }
+
+    fn lock_open(&self, wallet: &Pubkey) -> bool {
+        self.svm.get_account(&active_pda(wallet)).map_or(false, |a| a.lamports > 0)
     }
 
     fn jackpot(&self) -> Jackpot {
@@ -164,8 +181,8 @@ impl Env {
                 config: self.config,
                 jackpot: self.jackpot,
                 game,
-                stats_x: stats_pda(&x.wallet.pubkey()),
-                stats_o: stats_pda(&o.wallet.pubkey()),
+                active_x: active_pda(&x.wallet.pubkey()),
+                active_o: active_pda(&o.wallet.pubkey()),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -191,8 +208,9 @@ impl Env {
                 player_o: m.o.wallet.pubkey(),
                 jackpot: self.jackpot,
                 config: self.config,
-                stats_x: stats_pda(&m.x.wallet.pubkey()),
-                stats_o: stats_pda(&m.o.wallet.pubkey()),
+                active_x: active_pda(&m.x.wallet.pubkey()),
+                active_o: active_pda(&m.o.wallet.pubkey()),
+                leaderboard: self.leaderboard,
             }
             .to_account_metas(None),
         )
@@ -283,17 +301,16 @@ fn x_wins_and_takes_pot_minus_fees() {
     env.try_close(&m, &m.o.wallet).unwrap();
     assert!(env.svm.get_account(&m.game).map_or(true, |a| a.lamports == 0));
 
-    // Each wallet's first game also pays its stats account's rent (once, kept for the leaderboard).
-    let stats_rent = env.rent(env.svm.get_account(&stats_pda(&m.x.wallet.pubkey())).unwrap().data.len());
-    // X: -stake -gas -stats rent -start tx fee (2 signatures) +pot(0.1 - move fees). Game rent came back on close.
+    // The lock rent went back at game end, so it costs nothing net.
+    // X: -stake -gas -start tx fee (2 signatures) +pot(0.1 - move fees). Game rent came back on close.
     assert_eq!(
         env.balance(&m.x.wallet.pubkey()),
-        bx - 50_000_000 - 1_000_000 - stats_rent - 2 * TX_FEE + 100_000_000 - 5 * TX_FEE
+        bx - 50_000_000 - 1_000_000 - 2 * TX_FEE + 100_000_000 - 5 * TX_FEE
     );
     // O: -stake -gas -stats rent -close tx fee.
     assert_eq!(
         env.balance(&m.o.wallet.pubkey()),
-        bo - 50_000_000 - 1_000_000 - stats_rent - TX_FEE
+        bo - 50_000_000 - 1_000_000 - TX_FEE
     );
 }
 
@@ -351,7 +368,7 @@ fn start_game_rejects_duplicate_participants() {
         wallet: x.wallet.insecure_clone(),
         session: Keypair::new(),
     };
-    // Same wallet on both sides: both stats accounts are the same PDA, so it fails before the handler.
+    // Same wallet on both sides: both lock accounts are the same PDA, so it fails before the handler.
     let (ix, _) = env.start_ix(&x, &o, 1);
     assert!(env.send(ix, &[&x.wallet]).is_err());
 
@@ -378,6 +395,7 @@ fn deadline_is_inclusive_then_move_expires() {
 #[test]
 fn timeout_after_moving_loses() {
     let mut env = Env::new(default_args());
+    let lock_rent = env.rent(ACTIVE_LEN); // refunded when the game ends
     let m = env.start();
     let bx = env.balance(&m.x.wallet.pubkey());
 
@@ -392,12 +410,13 @@ fn timeout_after_moving_loses() {
     assert_eq!(g.status, GameStatus::WonByTimeout);
     assert_eq!(g.winner, X);
     assert_eq!(g.fees_paid, 4 * TX_FEE);
-    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + 100_000_000 - 4 * TX_FEE - TX_FEE);
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + lock_rent + 100_000_000 - 4 * TX_FEE - TX_FEE);
 }
 
 #[test]
 fn timeout_without_any_move_splits() {
     let mut env = Env::new(default_args());
+    let lock_rent = env.rent(ACTIVE_LEN); // refunded when the game ends
     let m = env.start();
     let (bx, bo) = (env.balance(&m.x.wallet.pubkey()), env.balance(&m.o.wallet.pubkey()));
 
@@ -408,8 +427,8 @@ fn timeout_without_any_move_splits() {
     let g = env.game(&m.game);
     assert_eq!(g.status, GameStatus::Split);
     let each = (100_000_000 - TX_FEE) / 2;
-    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + each);
-    assert_eq!(env.balance(&m.o.wallet.pubkey()), bo + each);
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + lock_rent + each);
+    assert_eq!(env.balance(&m.o.wallet.pubkey()), bo + lock_rent + each);
 }
 
 #[test]
@@ -426,6 +445,7 @@ fn idle_on_first_turn_after_opponent_moved_splits() {
 #[test]
 fn both_left_anyone_settles_50_50() {
     let mut env = Env::new(default_args());
+    let lock_rent = env.rent(ACTIVE_LEN); // refunded when the game ends
     let m = env.start();
     let (bx, bo) = (env.balance(&m.x.wallet.pubkey()), env.balance(&m.o.wallet.pubkey()));
     let cranker = Keypair::new();
@@ -442,8 +462,8 @@ fn both_left_anyone_settles_50_50() {
     assert_eq!(g.status, GameStatus::Split);
     // Two moves + the cranker's tx were refunded from the pot.
     let each = (100_000_000 - 3 * TX_FEE) / 2;
-    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + each);
-    assert_eq!(env.balance(&m.o.wallet.pubkey()), bo + each);
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + lock_rent + each);
+    assert_eq!(env.balance(&m.o.wallet.pubkey()), bo + lock_rent + each);
     assert_eq!(env.balance(&cranker.pubkey()), SOL);
 }
 
@@ -553,6 +573,7 @@ fn only_admin_updates_config() {
 #[test]
 fn players_choose_the_stake_within_limits() {
     let mut env = Env::new(default_args());
+    let lock_rent = env.rent(ACTIVE_LEN); // refunded when the game ends
     let x = Player::new(&mut env.svm);
     let o = Player::new(&mut env.svm);
 
@@ -571,33 +592,51 @@ fn players_choose_the_stake_within_limits() {
     let m = Match { x, o, game };
     let bx = env.balance(&m.x.wallet.pubkey());
     env.moves(&m, &[0, 3, 1, 4, 2]);
-    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + 500_000_000 - 5 * TX_FEE);
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + lock_rent + 500_000_000 - 5 * TX_FEE);
+}
+
+/// Asserts a wallet's leaderboard entry as (played, won, staked, paid).
+fn assert_entry(env: &Env, wallet: &Pubkey, want: (u32, u32, u64, u64)) {
+    let e = env.entry(wallet).expect("wallet missing from the leaderboard");
+    assert_eq!((e.played, e.won, e.staked, e.paid), want);
 }
 
 #[test]
-fn stats_after_a_won_game() {
+fn leaderboard_after_a_won_game_and_locks_refunded() {
     let mut env = Env::new(default_args());
-    let m = env.start();
-    let (xw, ow) = (m.x.wallet.pubkey(), m.o.wallet.pubkey());
+    let x = Player::new(&mut env.svm);
+    let o = Player::new(&mut env.svm);
+    let (xw, ow) = (x.wallet.pubkey(), o.wallet.pubkey());
+    let (bx, bo) = (env.balance(&xw), env.balance(&ow));
+    let (ix, game) = env.start_ix(&x, &o, 1);
+    env.send(ix, &[&x.wallet, &o.wallet]).unwrap();
+    let m = Match { x, o, game };
 
-    let s = env.stats(&xw);
-    assert_eq!(s.wallet, xw);
-    assert_eq!(s.active_game, m.game);
-    assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, 0));
+    // During the game each player's lock exists, holds the game, and its rent was paid by that player.
+    let lock_rent = env.rent(ACTIVE_LEN);
+    for w in [&xw, &ow] {
+        let acc = env.svm.get_account(&active_pda(w)).unwrap();
+        assert_eq!(acc.lamports, lock_rent);
+        assert_eq!(&acc.data[8..40], m.game.as_ref());
+    }
+    assert_eq!(env.board().len, 0);
+    assert!(env.entry(&xw).is_none());
 
     env.moves(&m, &[0, 3, 1, 4, 2]);
+
+    assert_eq!(env.board().len, 2);
+    assert_entry(&env, &xw, (1, 1, STAKE, 2 * STAKE - 5 * TX_FEE));
+    assert_entry(&env, &ow, (1, 0, STAKE, 0));
+    assert!(!env.lock_open(&xw));
+    assert!(!env.lock_open(&ow));
+
+    // Game rent is refunded at close, lock rent already was: both are only down stake/gas/fees.
     env.try_close(&m, &m.o.wallet).unwrap();
-    assert!(env.svm.get_account(&m.game).map_or(true, |a| a.lamports == 0));
-
-    let sx = env.stats(&xw);
-    assert_eq!(sx.active_game, Pubkey::default());
-    assert_eq!((sx.games_played, sx.games_won, sx.lamports_staked), (1, 1, STAKE));
-    assert_eq!(sx.lamports_won, 2 * STAKE - 5 * TX_FEE);
-
-    let so = env.stats(&ow);
-    assert_eq!(so.wallet, ow);
-    assert_eq!(so.active_game, Pubkey::default());
-    assert_eq!((so.games_played, so.games_won, so.lamports_staked, so.lamports_won), (1, 0, STAKE, 0));
+    assert_eq!(
+        env.balance(&xw),
+        bx - STAKE - 1_000_000 - 2 * TX_FEE + 2 * STAKE - 5 * TX_FEE
+    );
+    assert_eq!(env.balance(&ow), bo - STAKE - 1_000_000 - TX_FEE);
 }
 
 #[test]
@@ -609,24 +648,24 @@ fn one_game_per_wallet() {
 
     let (ix, _) = env.start_ix(&m.x, &o2, 2);
     assert_err(env.send(ix, &[&m.x.wallet, &o2.wallet]), "PlayerBusy");
-    // The busy opponent side is rejected too.
+    // A busy O is rejected too.
     let x2 = Player::new(&mut env.svm);
     let (ix, _) = env.start_ix(&x2, &m.o, 1);
     assert_err(env.send(ix, &[&x2.wallet, &m.o.wallet]), "PlayerBusy");
-    assert_eq!(env.stats(&xw).games_played, 1);
+    // Failed starts left the existing lock alone.
+    assert!(env.lock_open(&xw));
 
     env.moves(&m, &[0, 3, 1, 4, 2]);
+    assert!(!env.lock_open(&xw));
     let (ix, game_b) = env.start_ix(&m.x, &o2, 2);
     env.send(ix, &[&m.x.wallet, &o2.wallet]).unwrap();
-
-    let s = env.stats(&xw);
-    assert_eq!(s.active_game, game_b);
-    assert_eq!(s.games_played, 2);
-    assert_eq!(env.stats(&o2.wallet.pubkey()).games_played, 1);
+    let acc = env.svm.get_account(&active_pda(&xw)).unwrap();
+    assert_eq!(&acc.data[8..40], game_b.as_ref());
+    assert!(env.lock_open(&o2.wallet.pubkey()));
 }
 
 #[test]
-fn stats_after_split_by_timeout_and_by_settle() {
+fn splits_credit_both_halves_and_close_locks() {
     let mut env = Env::new(default_args());
 
     // Timeout without any move.
@@ -635,9 +674,8 @@ fn stats_after_split_by_timeout_and_by_settle() {
     env.try_claim(&m, &m.o.session).unwrap();
     let each = (2 * STAKE - TX_FEE) / 2;
     for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
-        let s = env.stats(&w);
-        assert_eq!(s.active_game, Pubkey::default());
-        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, each));
+        assert_entry(&env, &w, (1, 0, STAKE, each));
+        assert!(!env.lock_open(&w));
     }
 
     // Abandoned game settled by a cranker.
@@ -650,14 +688,14 @@ fn stats_after_split_by_timeout_and_by_settle() {
     assert_eq!(env.game(&m.game).status, GameStatus::Split);
     let each = (2 * STAKE - 3 * TX_FEE) / 2;
     for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
-        let s = env.stats(&w);
-        assert_eq!(s.active_game, Pubkey::default());
-        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, each));
+        assert_entry(&env, &w, (1, 0, STAKE, each));
+        assert!(!env.lock_open(&w));
     }
+    assert_eq!(env.board().len, 4);
 }
 
 #[test]
-fn stats_after_drained_game() {
+fn drained_game_records_play_but_no_payout() {
     let mut env = Env::new(Settings {
         fee_refund: 9_500_000,
         jackpot_every: 1,
@@ -670,14 +708,13 @@ fn stats_after_drained_game() {
     }
     assert_eq!(env.game(&m.game).status, GameStatus::Drained);
     for w in [m.x.wallet.pubkey(), m.o.wallet.pubkey()] {
-        let s = env.stats(&w);
-        assert_eq!(s.active_game, Pubkey::default());
-        assert_eq!((s.games_played, s.games_won, s.lamports_staked, s.lamports_won), (1, 0, STAKE, 0));
+        assert_entry(&env, &w, (1, 0, STAKE, 0));
+        assert!(!env.lock_open(&w));
     }
 }
 
 #[test]
-fn stats_accumulate_across_games() {
+fn leaderboard_accumulates_across_games() {
     let mut env = Env::new(default_args());
     let x = Player::new(&mut env.svm);
     let o = Player::new(&mut env.svm);
@@ -694,21 +731,59 @@ fn stats_accumulate_across_games() {
     let m2 = Match { x: m1.x, o: m1.o, game };
     env.moves(&m2, &[0, 3, 1, 4]); // no line yet; X to move
     env.warp(13);
-    // X to move and idle after having moved: O claims the timeout win.
+    // X idle after having moved: O claims the timeout win.
     env.try_claim(&m2, &m2.o.session).unwrap();
     let g = env.game(&m2.game);
     assert_eq!(g.status, GameStatus::WonByTimeout);
     assert_eq!(g.winner, O);
     let paid2 = 400_000_000 - g.fees_paid;
 
-    let sx = env.stats(&xw);
-    assert_eq!(sx.active_game, Pubkey::default());
-    assert_eq!((sx.games_played, sx.games_won), (2, 1));
-    assert_eq!(sx.lamports_staked, STAKE + 200_000_000);
-    assert_eq!(sx.lamports_won, paid1);
+    // One entry per wallet, summed over both games.
+    assert_eq!(env.board().len, 2);
+    assert_entry(&env, &xw, (2, 1, STAKE + 200_000_000, paid1));
+    assert_entry(&env, &ow, (2, 1, STAKE + 200_000_000, paid2));
+}
 
-    let so = env.stats(&ow);
-    assert_eq!((so.games_played, so.games_won), (2, 1));
-    assert_eq!(so.lamports_staked, STAKE + 200_000_000);
-    assert_eq!(so.lamports_won, paid2);
+#[test]
+fn full_leaderboard_evicts_only_for_a_better_newcomer() {
+    let mut env = Env::new(default_args());
+    // 25 games, X wins each: 25 winners (net > 0) and 25 losers (net = -STAKE) fill the board.
+    let mut losers = Vec::new();
+    for _ in 0..BOARD_SIZE / 2 {
+        let m = env.start();
+        env.moves(&m, &[0, 3, 1, 4, 2]);
+        losers.push(m.o.wallet.pubkey());
+    }
+    let b = env.board();
+    assert_eq!(b.len as usize, BOARD_SIZE);
+    let wallets = |b: &Leaderboard| -> Vec<Pubkey> { b.entries.iter().map(|e| e.wallet).collect() };
+    let before = wallets(&b);
+
+    // Big-stake game, X wins: the winner (net > 0) evicts one of the -STAKE losers,
+    // while its loser (net = -4*STAKE) is worse than everyone and stays off.
+    let x = Player::new(&mut env.svm);
+    let o = Player::new(&mut env.svm);
+    let (ix, game) = env.start_ix_with(&x, &o, 1, 200_000_000);
+    env.send(ix, &[&x.wallet, &o.wallet]).unwrap();
+    let m = Match { x, o, game };
+    env.moves(&m, &[0, 3, 1, 4, 2]);
+
+    let b = env.board();
+    assert_eq!(b.len as usize, BOARD_SIZE);
+    assert!(env.entry(&m.o.wallet.pubkey()).is_none(), "worse newcomer must not enter");
+    assert_entry(&env, &m.x.wallet.pubkey(), (1, 1, 200_000_000, 400_000_000 - 5 * TX_FEE));
+    let after = wallets(&b);
+    let evicted: Vec<_> = before.iter().filter(|w| !after.contains(w)).collect();
+    assert_eq!(evicted.len(), 1);
+    assert!(losers.contains(evicted[0]), "the lowest-net entry is the one evicted");
+    // Locks are closed even when a wallet didn't make the board.
+    assert!(!env.lock_open(&m.o.wallet.pubkey()));
+
+    // A split (net ~ -fee/2, better than -STAKE) also beats the remaining losers, for both players.
+    let m = env.start();
+    env.warp(13);
+    env.try_claim(&m, &m.o.session).unwrap();
+    assert_eq!(env.board().len as usize, BOARD_SIZE);
+    assert!(env.entry(&m.x.wallet.pubkey()).is_some());
+    assert!(env.entry(&m.o.wallet.pubkey()).is_some());
 }
