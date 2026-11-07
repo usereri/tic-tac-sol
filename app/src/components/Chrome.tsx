@@ -29,7 +29,7 @@ export function Nav({ meta }: { meta?: ReactNode }) {
         TIC/TAC<i className="ml-1 bg-ink px-1.5 not-italic text-signal">SOL</i>
       </a>
       <div className="hidden items-center gap-5 px-4 text-xs uppercase tracking-[0.08em] text-ink-2 md:flex">
-        {meta ?? <span>{CLUSTER}</span>}
+        {meta ?? <><span>{CLUSTER}</span><a href="#/leaderboard" className="text-ink-2 hover:text-ink">Leaderboard</a></>}
       </div>
       <WalletButton />
     </nav>
