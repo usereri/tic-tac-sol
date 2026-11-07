@@ -802,15 +802,15 @@ fn full_leaderboard_evicts_only_for_a_better_newcomer() {
 #[test]
 fn turn_slots_speed_up_to_a_floor() {
     use tic_tac_sol::turn_slots_at;
-    for elapsed in [0, 1, 74] {
+    for elapsed in [0, 1, 24] {
         assert_eq!(turn_slots_at(30, elapsed), 30);
     }
-    for elapsed in [75, 100, 149] {
+    for elapsed in [25, 40, 49] {
         assert_eq!(turn_slots_at(30, elapsed), 28);
     }
-    assert_eq!(turn_slots_at(30, 150), 26);
-    assert_eq!(turn_slots_at(30, 674), 14);
-    assert_eq!(turn_slots_at(30, 675), 12);
+    assert_eq!(turn_slots_at(30, 50), 26);
+    assert_eq!(turn_slots_at(30, 224), 14);
+    assert_eq!(turn_slots_at(30, 225), 12);
     assert_eq!(turn_slots_at(30, 10_000_000), 12);
     assert_eq!(turn_slots_at(30, u64::MAX), 12);
     // A small start is never raised: the floor is min(12, start).
@@ -831,7 +831,7 @@ fn play_until_elapsed(env: &mut Env, m: &Match, target: u64) {
             assert_eq!(elapsed, target);
             return;
         }
-        let window = (30 - 2 * (elapsed / 75).min(15)).max(12);
+        let window = (30 - 2 * (elapsed / 25).min(15)).max(12);
         env.warp(window.min(target - elapsed));
         let cell = non_winning_cell(&g);
         env.moves(m, &[cell]);
@@ -863,10 +863,10 @@ fn turn_window_follows_the_accelerating_clock() {
     env.warp(30 + START_GRACE_SLOTS + 1);
     assert_err(env.try_move(&m, &m.x.session, 0), "TurnExpired");
 
-    // 600 slots in the window is 14: +14 is accepted, +15 is not.
+    // 200 slots in the window is 14: +14 is accepted, +15 is not.
     let mut env = Env::new(args.clone());
     let m = env.start();
-    play_until_elapsed(&mut env, &m, 600);
+    play_until_elapsed(&mut env, &m, 200);
     env.warp(15);
     let (mover, _) = mover_and_waiting(&env, &m);
     let cell = non_winning_cell(&env.game(&m.game));
@@ -874,15 +874,15 @@ fn turn_window_follows_the_accelerating_clock() {
 
     let mut env = Env::new(args);
     let m = env.start();
-    play_until_elapsed(&mut env, &m, 600);
+    play_until_elapsed(&mut env, &m, 200);
     let (mover, waiting) = mover_and_waiting(&env, &m);
     env.warp(14);
     assert_err(env.try_claim(&m, &waiting.session), "TurnNotExpired");
     let cell = non_winning_cell(&env.game(&m.game));
     env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +14: accepted
 
-    // Past 675 slots the floor of 12 applies.
-    play_until_elapsed(&mut env, &m, 900);
+    // Past 225 slots the floor of 12 applies.
+    play_until_elapsed(&mut env, &m, 300);
     assert_eq!(env.game(&m.game).status, GameStatus::Active);
     let (mover, waiting) = mover_and_waiting(&env, &m);
     env.warp(12);

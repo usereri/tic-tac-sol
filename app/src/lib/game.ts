@@ -207,9 +207,9 @@ export async function sweepSession(session: KeyPairSigner, to: Address): Promise
 
 /* ---------------- Rules (mirror of the program, for the UI) ---------------- */
 
-// Same as the program's turn_slots_at: 2 slots shorter every 75 slots (~30 s) of game time,
+// Same as the program's turn_slots_at: 2 slots shorter every 25 slots (~10 s) of game time,
 // never below 12 (~4.8 s).
-const TURN_STEP_EVERY_SLOTS = 75n
+const TURN_STEP_EVERY_SLOTS = 25n
 const TURN_STEP_SLOTS = 2n
 const TURN_MIN_SLOTS = 12n
 /** Extra slots for the first move: X hears about the game a few seconds after it starts. */

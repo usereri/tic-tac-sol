@@ -5,7 +5,7 @@ import { CLUSTER } from '../lib/solana'
 
 const TICKER = [
   'Fee per move 5,000 lamports',
-  'Turns speed up every 30 s',
+  'Turns speed up every 10 s',
   '1 signature per player',
   'Escrow pays every fee',
   'Oldest mark fades',
