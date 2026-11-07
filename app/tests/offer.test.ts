@@ -5,6 +5,7 @@ import {
   getAddressFromPublicKey,
   getBase64EncodedWireTransaction,
   partiallySignTransactionMessageWithSigners,
+  AccountRole,
   type Address,
   type Blockhash,
   type Instruction,
@@ -17,6 +18,9 @@ import { checkOffer, type Offer, type OfferContext } from '../src/lib/offer'
 
 const STAKE = 1_000_000n
 const NONCE = 1234n
+const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111' as Address
+const LIGHTHOUSE = 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95' as Address
+const REFUSED = /was refused/
 
 let xWallet: KeyPairSigner, oWallet: KeyPairSigner, xSession: KeyPairSigner, oSession: KeyPairSigner
 let lifetime: Lifetime
@@ -61,40 +65,83 @@ describe('checkOffer', () => {
 
   it('rejects when X swaps sessionO for another key', async () => {
     const other = await generateKeyPairSigner()
-    await expect(checkOffer(await makeOffer({ sessionO: other.address }), ctx())).rejects.toThrow(/Not signing/)
+    await expect(checkOffer(await makeOffer({ sessionO: other.address }), ctx())).rejects.toThrow(/accounts differ/)
   })
 
   it('rejects an appended instruction', async () => {
     const extra = getTransferSolInstruction({ source: createNoopSigner(oWallet.address), destination: xWallet.address, amount: 5n })
-    await expect(checkOffer(await makeOffer({ extra: [extra] }), ctx())).rejects.toThrow(/Not signing/)
+    await expect(checkOffer(await makeOffer({ extra: [extra] }), ctx())).rejects.toThrow(REFUSED)
   })
 
   it('rejects a different stake', async () => {
-    await expect(checkOffer(await makeOffer({ stake: STAKE * 2n }), ctx())).rejects.toThrow(/Not signing/)
-    await expect(checkOffer(await makeOffer(), ctx({ stake: STAKE * 2n }))).rejects.toThrow(/Not signing/)
+    await expect(checkOffer(await makeOffer({ stake: STAKE * 2n }), ctx())).rejects.toThrow(REFUSED)
+    await expect(checkOffer(await makeOffer(), ctx({ stake: STAKE * 2n }))).rejects.toThrow(REFUSED)
   })
 
   it('rejects when offer.nonce differs from the one in the message', async () => {
     const offer = await makeOffer()
-    await expect(checkOffer({ ...offer, nonce: NONCE + 1n }, ctx())).rejects.toThrow(/Not signing/)
+    await expect(checkOffer({ ...offer, nonce: NONCE + 1n }, ctx())).rejects.toThrow(REFUSED)
   })
 
   it('rejects when offer.game does not match', async () => {
     const offer = await makeOffer()
     const other = (await generateKeyPairSigner()).address
-    await expect(checkOffer({ ...offer, game: other }, ctx())).rejects.toThrow(/Not signing/)
+    await expect(checkOffer({ ...offer, game: other }, ctx())).rejects.toThrow(REFUSED)
   })
 
   it('rejects when the opponent wallet differs (impersonation)', async () => {
     const mallory = await generateKeyPairSigner()
     const offer = await makeOffer()
-    await expect(checkOffer(offer, ctx({ opponent: { wallet: mallory.address, session: xSession.address } }))).rejects.toThrow(/Not signing/)
+    await expect(checkOffer(offer, ctx({ opponent: { wallet: mallory.address, session: xSession.address } }))).rejects.toThrow(REFUSED)
   })
 
-  it('rejects when the offer lifetime blockhash differs from the message', async () => {
+  it("uses the message's blockhash and the offer's lastValidBlockHeight", async () => {
     const offer = await makeOffer()
     const other = await getAddressFromPublicKey((await generateKeyPairSigner()).keyPair.publicKey)
-    const swapped = { blockhash: other as unknown as Blockhash, lastValidBlockHeight: 100n }
-    await expect(checkOffer({ ...offer, lifetime: swapped }, ctx())).rejects.toThrow(/Not signing/)
+    const swapped = { blockhash: other as unknown as Blockhash, lastValidBlockHeight: 777n }
+    const tx = await checkOffer({ ...offer, lifetime: swapped }, ctx())
+    expect(tx.lifetimeConstraint).toEqual({ blockhash: lifetime.blockhash, lastValidBlockHeight: 777n })
+  })
+
+  it('accepts extra ComputeBudget and Lighthouse instructions that avoid O', async () => {
+    const price = new Uint8Array(9)
+    price[0] = 3
+    new DataView(price.buffer).setBigUint64(1, 5000n, true)
+    const budget: Instruction = { programAddress: COMPUTE_BUDGET, data: price }
+    const lighthouse: Instruction = {
+      programAddress: LIGHTHOUSE,
+      accounts: [{ address: xWallet.address, role: AccountRole.READONLY }],
+      data: new Uint8Array([1, 2, 3]),
+    }
+    const tx = await checkOffer(await makeOffer({ extra: [budget, lighthouse] }), ctx())
+    expect(tx.lifetimeConstraint.blockhash).toBe(lifetime.blockhash)
+  })
+
+  it("rejects a Lighthouse instruction referencing O's wallet or session", async () => {
+    for (const touched of [oWallet.address, oSession.address]) {
+      const lighthouse: Instruction = {
+        programAddress: LIGHTHOUSE,
+        accounts: [{ address: touched, role: AccountRole.READONLY }],
+        data: new Uint8Array([1]),
+      }
+      await expect(checkOffer(await makeOffer({ extra: [lighthouse] }), ctx())).rejects.toThrow(/touches your account/)
+    }
+  })
+
+  it('rejects an unknown extra program', async () => {
+    const unknown: Instruction = { programAddress: (await generateKeyPairSigner()).address, data: new Uint8Array([0]) }
+    await expect(checkOffer(await makeOffer({ extra: [unknown] }), ctx())).rejects.toThrow(/unexpected instruction/)
+  })
+
+  it('rejects two game instructions', async () => {
+    const ix = await getStartGameInstructionAsync({
+      playerX: xWallet,
+      playerO: createNoopSigner(oWallet.address),
+      sessionX: xSession,
+      sessionO: oSession.address,
+      nonce: NONCE,
+      stake: STAKE,
+    })
+    await expect(checkOffer(await makeOffer({ extra: [ix] }), ctx())).rejects.toThrow(/exactly one game instruction/)
   })
 })
