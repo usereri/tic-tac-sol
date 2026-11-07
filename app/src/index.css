@@ -61,8 +61,8 @@
   .chip-line { border: 2px solid var(--color-ink); }
 
   /* Board */
-  .board { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); border: 3px solid var(--color-ink); background: var(--color-ink); gap: 3px; box-shadow: var(--shadow-hard); }
-  .cell { position: relative; aspect-ratio: 1; background: var(--color-panel); display: grid; place-items: center; padding: 20%; border: 0; cursor: default; }
+  .board { position: relative; container-type: inline-size; display: grid; grid-template-columns: repeat(3, 1fr); border: 3px solid var(--color-ink); background: var(--color-ink); gap: 3px; box-shadow: var(--shadow-hard); }
+  .cell { position: relative; aspect-ratio: 1; background: var(--color-panel); display: grid; place-items: center; padding: 24%; border: 0; cursor: default; }
   .cell .coord { position: absolute; top: 6px; left: 8px; font-size: 10px; color: var(--color-ink-2); letter-spacing: 0.08em; }
   .cell svg { width: 100%; height: 100%; animation: stamp 0.28s cubic-bezier(.2,.9,.3,1.3) both; }
   .cell.playable { cursor: pointer; }
@@ -79,7 +79,7 @@
   .winline { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; }
   .winline line { stroke: var(--color-ink); stroke-width: 10; stroke-linecap: square; stroke-dasharray: 600; stroke-dashoffset: 600; animation: slash 0.35s 0.15s ease-out forwards; }
 
-  .banner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-4deg) scale(0.6); opacity: 0; background: var(--color-ink); color: var(--color-signal); font-family: var(--font-display); font-stretch: 125%; font-weight: 900; font-size: clamp(13px, 2.2vw, 26px); text-transform: uppercase; padding: 8px 14px; white-space: nowrap; box-shadow: 6px 6px 0 var(--color-signal); animation: pop 0.3s 0.4s cubic-bezier(.2,.9,.3,1.4) forwards; }
+  .banner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-7deg) scale(0.6); opacity: 0; background: var(--color-ink); color: var(--color-signal); font-family: var(--font-display); font-stretch: 125%; font-weight: 900; font-size: clamp(9px, 6.4cqi, 26px); text-transform: uppercase; padding: 0.35em 0.6em; white-space: nowrap; max-width: 90cqi; box-shadow: 0.25em 0.25em 0 var(--color-signal); animation: pop 0.3s 0.4s cubic-bezier(.2,.9,.3,1.4) forwards; }
 
   .timer { height: 18px; border: 3px solid var(--color-ink); background: var(--color-panel); position: relative; overflow: hidden; }
   .timer > span { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(90deg, var(--color-ink) 0 10px, transparent 10px 13px); transition: width 0.4s linear; }
@@ -95,11 +95,17 @@
   .log a { color: inherit; }
 }
 
+/* Small boards (phone home page, result thumbnail): marks and stripes only. */
+@container (max-width: 300px) {
+  .cell { padding: 22%; }
+  .cell .coord, .cell .fade-tag { display: none; }
+}
+
 @keyframes wipe { to { background-size: 100% 100%; } }
 @keyframes stamp { from { transform: scale(1.7) rotate(-8deg); opacity: 0; } 60% { transform: scale(0.9); opacity: 1; } to { transform: none; } }
 @keyframes vanish { to { transform: scale(0.15) rotate(25deg); opacity: 0; } }
 @keyframes slash { to { stroke-dashoffset: 0; } }
-@keyframes pop { to { opacity: 1; transform: translate(-50%, -50%) rotate(-4deg) scale(1); } }
+@keyframes pop { to { opacity: 1; transform: translate(-50%, -50%) rotate(-7deg) scale(1); } }
 @keyframes tick { to { transform: translateX(-50%); } }
 @keyframes blink { 50% { opacity: 0; } }
 
