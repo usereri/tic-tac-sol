@@ -17,10 +17,12 @@ use {
 
 const SOL: u64 = 1_000_000_000;
 const TX_FEE: u64 = 5_000;
+const STAKE: u64 = 50_000_000;
 
 fn default_args() -> Settings {
     Settings {
-        stake: 50_000_000,
+        min_stake: 10_000_000,
+        max_stake: 1_000_000_000,
         gas_deposit: 1_000_000,
         fee_refund: TX_FEE,
         turn_slots: 12,
@@ -134,13 +136,17 @@ impl Env {
     }
 
     fn start_ix(&self, x: &Player, o: &Player, nonce: u64) -> (Instruction, Pubkey) {
+        self.start_ix_with(x, o, nonce, STAKE)
+    }
+
+    fn start_ix_with(&self, x: &Player, o: &Player, nonce: u64, stake: u64) -> (Instruction, Pubkey) {
         let game = Pubkey::find_program_address(
             &[GAME_SEED, x.wallet.pubkey().as_ref(), &nonce.to_le_bytes()],
             &tic_tac_sol::id(),
         )
         .0;
         let ix = self.ix(
-            instruction::StartGame { nonce }.data(),
+            instruction::StartGame { nonce, stake }.data(),
             accounts::StartGame {
                 player_x: x.wallet.pubkey(),
                 player_o: o.wallet.pubkey(),
@@ -526,4 +532,28 @@ fn only_admin_updates_config() {
         .to_account_metas(None),
     );
     assert_err(env.send(bad, &[&admin]), "InvalidConfig");
+}
+
+#[test]
+fn players_choose_the_stake_within_limits() {
+    let mut env = Env::new(default_args());
+    let x = Player::new(&mut env.svm);
+    let o = Player::new(&mut env.svm);
+
+    let (ix, _) = env.start_ix_with(&x, &o, 1, 9_999_999);
+    assert_err(env.send(ix, &[&x.wallet, &o.wallet]), "InvalidStake");
+    let (ix, _) = env.start_ix_with(&x, &o, 2, 1_000_000_001);
+    assert_err(env.send(ix, &[&x.wallet, &o.wallet]), "InvalidStake");
+
+    let (ix, game) = env.start_ix_with(&x, &o, 3, 250_000_000);
+    env.send(ix, &[&x.wallet, &o.wallet]).unwrap();
+    let g = env.game(&game);
+    assert_eq!(g.stake, 250_000_000);
+    assert_eq!(g.initial_pot, 500_000_000);
+    assert_eq!(env.pot(&game), 500_000_000);
+
+    let m = Match { x, o, game };
+    let bx = env.balance(&m.x.wallet.pubkey());
+    env.moves(&m, &[0, 3, 1, 4, 2]);
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + 500_000_000 - 5 * TX_FEE);
 }
