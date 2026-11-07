@@ -6,7 +6,7 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
 
 - Each player keeps at most 3 marks. Placing a 4th removes your oldest one first, and you can't place on the cell it just left.
 - Three in a row wins the whole pot, minus the real tx fees paid during the game.
-- Turn deadline is `turn_slots` (12 slots ≈ 5 s) after the previous action.
+- Turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 75 slots (≈ 30 s) since the game started it gets 2 slots shorter, never below 8 slots (≈ 3.3 s).
   - Idle player had moved before → the waiting player claims the pot (`claim_timeout`).
   - Idle player never moved → 50/50 split.
   - Nobody claims within `abandon_slots` after the deadline → anyone can settle 50/50 (`settle_abandoned`).
@@ -30,7 +30,7 @@ Every game end records both wallets (games played/won, SOL staked/paid) on a sha
 
 The pot is always the game account's lamports above its rent-exempt minimum. Events `GameStarted`, `MoveMade` and `GameEnded` carry everything the UI needs.
 
-Default config for devnet: min_stake `10_000_000`, max_stake `1_000_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `12`, abandon_slots `150`, drain_floor_bps `1_000`, jackpot_every `10`.
+Default config for devnet: min_stake `10_000_000`, max_stake `1_000_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `30` (start of the speeding-up clock), abandon_slots `150`, drain_floor_bps `1_000`, jackpot_every `10`.
 
 ## Develop
 

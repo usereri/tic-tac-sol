@@ -15,6 +15,12 @@ pub const ACTIVE_SEED: &[u8] = b"active";
 #[constant]
 pub const LEADERBOARD_SEED: &[u8] = b"leaderboard";
 
+/// The turn clock speeds up with game time: every `TURN_STEP_EVERY_SLOTS` (~30 s) the turn gets
+/// `TURN_STEP_SLOTS` shorter, starting from the config's `turn_slots`, never below `TURN_MIN_SLOTS` (~3.3 s).
+pub const TURN_STEP_EVERY_SLOTS: u64 = 75;
+pub const TURN_STEP_SLOTS: u64 = 2;
+pub const TURN_MIN_SLOTS: u64 = 8;
+
 /// Wallets kept on the on-chain leaderboard.
 pub const BOARD_SIZE: usize = 50;
 

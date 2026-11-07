@@ -14,6 +14,7 @@ import {
   O,
   payouts,
   sweepSession,
+  turnSlotsAt,
   useConfig,
   useGame,
   useSlot,
@@ -75,7 +76,7 @@ export function GameScreen({ id }: { id: string }) {
     setPending(null)
   }, [game])
 
-  const turnSlots = config?.turnSlots ?? 12n
+  const turnSlots = game ? turnSlotsAt(config?.turnSlots ?? 30n, game.lastActionSlot - game.startedSlot) : (config?.turnSlots ?? 30n)
   const deadline = game ? game.lastActionSlot + turnSlots : 0n
   const slotsLeft = game && slot !== null ? Number(deadline - slot) : Number(turnSlots)
   const secondsLeft = Math.max(0, (slotsLeft * SLOT_MS) / 1000)

@@ -46,9 +46,18 @@ export function explorerTx(signature: string) {
 
 export type Lifetime = { blockhash: Blockhash; lastValidBlockHeight: bigint }
 
-/** A v0 message. Pass `lifetime` to rebuild a known message byte for byte (see Play's checkOffer). */
-export async function buildMessage(feePayer: TransactionSigner, instructions: Instruction[], lifetime?: Lifetime) {
-  const blockhash = lifetime ?? (await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send()).value
+/**
+ * A v0 message. Pass `lifetime` to reuse a known blockhash. `finalized` picks a blockhash every
+ * node already knows: wallets check it on their own RPC before signing, and a very fresh
+ * `confirmed` one can be rejected there as "Blockhash is invalid or cannot be validated".
+ */
+export async function buildMessage(
+  feePayer: TransactionSigner,
+  instructions: Instruction[],
+  lifetime?: Lifetime,
+  commitment: 'confirmed' | 'finalized' = 'confirmed',
+) {
+  const blockhash = lifetime ?? (await rpc.getLatestBlockhash({ commitment }).send()).value
   return pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(feePayer, m),
@@ -74,7 +83,7 @@ export async function send(feePayer: TransactionSigner, instructions: Instructio
 
 /** Signs with whichever attached signers can sign now; the rest (noop signers) stay empty. */
 export async function buildPartiallySigned(feePayer: TransactionSigner, instructions: Instruction[]) {
-  return partiallySignTransactionMessageWithSigners(await buildMessage(feePayer, instructions))
+  return partiallySignTransactionMessageWithSigners(await buildMessage(feePayer, instructions, undefined, 'finalized'))
 }
 
 /** The exact bytes a wallet signs for this message. */
@@ -97,5 +106,8 @@ export function describeError(err: unknown): string {
   const anchor = logs?.map((l) => /Error Message: (.*)$/.exec(l)?.[1]).find(Boolean)
   if (anchor) return anchor
   if (/reject/i.test(e?.message ?? '')) return 'You rejected the request in your wallet. Nothing was signed or paid.'
+  if (/blockhash/i.test(e?.message ?? '')) {
+    return `Your wallet couldn't verify this transaction's blockhash. Make sure it's set to ${CLUSTER === 'devnet' ? 'Devnet (Phantom: Settings → Developer Settings → Testnet Mode → Solana Devnet)' : 'the same network as the game'}, then press Sign again.`
+  }
   return e?.message ?? String(err)
 }

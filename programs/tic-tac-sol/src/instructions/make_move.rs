@@ -33,7 +33,10 @@ impl<'info> PlayGame<'info> {
     pub fn deadline(&self) -> Result<u64> {
         self.game
             .last_action_slot
-            .checked_add(self.config.args.turn_slots)
+            .checked_add(turn_slots_at(
+                self.config.args.turn_slots,
+                self.game.last_action_slot.saturating_sub(self.game.started_slot),
+            ))
             .ok_or(error!(ErrorCode::MathOverflow))
     }
 

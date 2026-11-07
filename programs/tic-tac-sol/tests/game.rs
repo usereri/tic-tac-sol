@@ -787,3 +787,104 @@ fn full_leaderboard_evicts_only_for_a_better_newcomer() {
     assert!(env.entry(&m.x.wallet.pubkey()).is_some());
     assert!(env.entry(&m.o.wallet.pubkey()).is_some());
 }
+
+#[test]
+fn turn_slots_speed_up_to_a_floor() {
+    use tic_tac_sol::turn_slots_at;
+    for elapsed in [0, 1, 74] {
+        assert_eq!(turn_slots_at(30, elapsed), 30);
+    }
+    for elapsed in [75, 100, 149] {
+        assert_eq!(turn_slots_at(30, elapsed), 28);
+    }
+    assert_eq!(turn_slots_at(30, 150), 26);
+    assert_eq!(turn_slots_at(30, 749), 12);
+    assert_eq!(turn_slots_at(30, 750), 10);
+    assert_eq!(turn_slots_at(30, 824), 10);
+    assert_eq!(turn_slots_at(30, 825), 8);
+    assert_eq!(turn_slots_at(30, 10_000_000), 8);
+    assert_eq!(turn_slots_at(30, u64::MAX), 8);
+    // A small start is never raised: the floor is min(8, start).
+    for elapsed in [0, 75, 1_000, u64::MAX] {
+        assert_eq!(turn_slots_at(5, elapsed), 5);
+    }
+    assert_eq!(turn_slots_at(8, 1_000), 8);
+    assert_eq!(turn_slots_at(10, 1_000), 8);
+}
+
+/// Plays moves, each as late as allowed (but never past `target`), until the last action is
+/// exactly `target` slots after the game started.
+fn play_until_elapsed(env: &mut Env, m: &Match, target: u64) {
+    loop {
+        let g = env.game(&m.game);
+        let elapsed = g.last_action_slot - g.started_slot;
+        if elapsed >= target {
+            assert_eq!(elapsed, target);
+            return;
+        }
+        let window = 30 - 2 * (elapsed / 75).min(10); // never below the 8 floor in the ranges used here
+        env.warp(window.min(target - elapsed));
+        let cell = non_winning_cell(&g);
+        env.moves(m, &[cell]);
+    }
+}
+
+fn mover_and_waiting<'a>(env: &Env, m: &'a Match) -> (&'a Player, &'a Player) {
+    match env.game(&m.game).turn {
+        X => (&m.x, &m.o),
+        _ => (&m.o, &m.x),
+    }
+}
+
+#[test]
+fn turn_window_follows_the_accelerating_clock() {
+    let args = Settings {
+        turn_slots: 30,
+        ..default_args()
+    };
+
+    // First move: the full 30 slots, inclusive.
+    let mut env = Env::new(args.clone());
+    let m = env.start();
+    env.warp(30);
+    env.moves(&m, &[0]);
+
+    let mut env = Env::new(args.clone());
+    let m = env.start();
+    env.warp(31);
+    assert_err(env.try_move(&m, &m.x.session, 0), "TurnExpired");
+
+    // 750 slots in the window is 10: +10 is accepted, +11 is not.
+    let mut env = Env::new(args.clone());
+    let m = env.start();
+    play_until_elapsed(&mut env, &m, 750);
+    env.warp(11);
+    let (mover, _) = mover_and_waiting(&env, &m);
+    let cell = non_winning_cell(&env.game(&m.game));
+    assert_err(env.try_move(&m, &mover.session, cell), "TurnExpired");
+
+    let mut env = Env::new(args);
+    let m = env.start();
+    play_until_elapsed(&mut env, &m, 750);
+    let (mover, waiting) = mover_and_waiting(&env, &m);
+    env.warp(10);
+    assert_err(env.try_claim(&m, &waiting.session), "TurnNotExpired");
+    let cell = non_winning_cell(&env.game(&m.game));
+    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +10: accepted
+
+    // Past 825 slots the floor of 8 applies.
+    play_until_elapsed(&mut env, &m, 825);
+    assert_eq!(env.game(&m.game).status, GameStatus::Active);
+    let (mover, waiting) = mover_and_waiting(&env, &m);
+    env.warp(8);
+    assert_err(env.try_claim(&m, &waiting.session), "TurnNotExpired");
+    let cell = non_winning_cell(&env.game(&m.game));
+    env.try_move(&m, &mover.session, cell).unwrap(); // exactly at +8: accepted
+
+    let (mover, waiting) = mover_and_waiting(&env, &m);
+    env.warp(9);
+    let cell = non_winning_cell(&env.game(&m.game));
+    assert_err(env.try_move(&m, &mover.session, cell), "TurnExpired");
+    env.try_claim(&m, &waiting.session).unwrap();
+    assert_eq!(env.game(&m.game).status, GameStatus::WonByTimeout);
+}

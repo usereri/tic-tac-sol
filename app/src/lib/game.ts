@@ -207,6 +207,19 @@ export async function sweepSession(session: KeyPairSigner, to: Address): Promise
 
 /* ---------------- Rules (mirror of the program, for the UI) ---------------- */
 
+// Same as the program's turn_slots_at: 2 slots shorter every 75 slots (~30 s) of game time,
+// never below 8 (~3.3 s).
+const TURN_STEP_EVERY_SLOTS = 75n
+const TURN_STEP_SLOTS = 2n
+const TURN_MIN_SLOTS = 8n
+
+/** Slots the player to move has, `elapsed` slots into the game. */
+export function turnSlotsAt(start: bigint, elapsed: bigint) {
+  const reduced = start - (elapsed / TURN_STEP_EVERY_SLOTS) * TURN_STEP_SLOTS
+  const floor = TURN_MIN_SLOTS < start ? TURN_MIN_SLOTS : start
+  return reduced > floor ? reduced : floor
+}
+
 export const WIN_LINES = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],
   [0, 3, 6], [1, 4, 7], [2, 5, 8],

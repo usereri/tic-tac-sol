@@ -12,7 +12,7 @@ pub struct Settings {
     pub gas_deposit: u64,
     /// Lamports the escrow pays back to whoever signs a move / claim (the real tx fee).
     pub fee_refund: u64,
-    /// Slots a player has to make their move.
+    /// Slots per turn at the start of a game; the clock then speeds up (see `turn_slots_at`).
     pub turn_slots: u64,
     /// Slots after a missed deadline during which the waiting player may claim; after that anyone can settle 50/50.
     pub abandon_slots: u64,
@@ -146,6 +146,8 @@ pub struct Game {
     pub jackpot_bonus: u64,
     pub fees_paid: u64,
     pub last_action_slot: u64,
+    /// Slot the game started in; drives the speeding-up turn clock.
+    pub started_slot: u64,
     pub nonce: u64,
     pub bump: u8,
 }
@@ -261,4 +263,12 @@ pub struct GameEnded {
     pub to_jackpot: u64,
     pub fees_paid: u64,
     pub move_count: u32,
+}
+
+/// Slots the player to move has, `elapsed` slots into the game.
+pub fn turn_slots_at(start: u64, elapsed: u64) -> u64 {
+    let steps = elapsed / TURN_STEP_EVERY_SLOTS;
+    start
+        .saturating_sub(steps.saturating_mul(TURN_STEP_SLOTS))
+        .max(TURN_MIN_SLOTS.min(start))
 }

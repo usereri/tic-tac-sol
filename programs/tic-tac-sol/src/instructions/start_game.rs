@@ -134,6 +134,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         jackpot_bonus,
         fees_paid: 0,
         last_action_slot: Clock::get()?.slot,
+        started_slot: Clock::get()?.slot,
         nonce,
         bump: ctx.bumps.game,
     });

@@ -40,7 +40,7 @@ export function Home() {
           </h1>
           <p className="hidden max-w-[640px] text-[clamp(13px,1.8svh,16px)] text-ink-2 sm:block">
             Pick your stake. Each player keeps three marks; place a fourth and your oldest disappears.
-            Five seconds per move. The winner takes the pot.
+            12 s per move, a little faster every 30 s, down to 3 s. The winner takes the pot.
           </p>
 
           <div className="flex min-w-0 items-start gap-[clamp(12px,2svh,28px)]">

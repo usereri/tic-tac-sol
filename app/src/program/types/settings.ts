@@ -17,7 +17,7 @@ maxStake: bigint;
 gasDeposit: bigint; 
 /** Lamports the escrow pays back to whoever signs a move / claim (the real tx fee). */
 feeRefund: bigint; 
-/** Slots a player has to make their move. */
+/** Slots per turn at the start of a game; the clock then speeds up (see `turn_slots_at`). */
 turnSlots: bigint; 
 /** Slots after a missed deadline during which the waiting player may claim; after that anyone can settle 50/50. */
 abandonSlots: bigint; 
@@ -35,7 +35,7 @@ maxStake: number | bigint;
 gasDeposit: number | bigint; 
 /** Lamports the escrow pays back to whoever signs a move / claim (the real tx fee). */
 feeRefund: number | bigint; 
-/** Slots a player has to make their move. */
+/** Slots per turn at the start of a game; the clock then speeds up (see `turn_slots_at`). */
 turnSlots: number | bigint; 
 /** Slots after a missed deadline during which the waiting player may claim; after that anyone can settle 50/50. */
 abandonSlots: number | bigint; 
