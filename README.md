@@ -20,10 +20,13 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
 | --- | --- | --- |
 | `init_config(args)` / `update_config(args)` | admin | Creates/tunes `Config` and creates `Jackpot` |
 | `start_game(nonce, stake)` | both players' wallets | Atomic: stake must be within `min_stake..=max_stake`; both stakes in, both one-off wallets funded with `gas_deposit`, game PDA `["game", player_x, nonce]` created |
+| (start_game) | | Also creates each wallet's one-game lock `["active", wallet]` and rejects a wallet that is already in a game (`PlayerBusy`). The lock is closed when the game ends and its rent goes back to the player |
 | `make_move(cell)` | one-off wallet of the player to move | Escrow pays the fee back to the signer |
 | `claim_timeout` | one-off wallet of the waiting player | Within the claim window after a missed deadline |
 | `settle_abandoned` | anyone | After the claim window, 50/50. Signer's fee is refunded |
 | `close_game` | anyone | Ended games only. Rent goes back to X |
+
+Every game end records both wallets (games played/won, SOL staked/paid) on a shared top-50 `Leaderboard` account `["leaderboard"]`, created and paid for by the admin in `init_config`. It's keyed by the real wallet, never the one-off session key, and feeds the in-app leaderboard (`#/leaderboard`). When the board is full, a newcomer replaces the lowest-net entry only if it's doing better. Players pay no net rent: the game account's rent returns to X on `close_game`, and each lock's rent returns at game end.
 
 The pot is always the game account's lamports above its rent-exempt minimum. Events `GameStarted`, `MoveMade` and `GameEnded` carry everything the UI needs.
 
@@ -97,7 +100,7 @@ Without Supabase env vars the app pairs tabs of one browser (`BroadcastChannel`)
 
 For local cross-device testing, put both variables in `app/.env.local`.
 
-Players are only matched with others who picked the same stake. Matchmaking messages are signed with each player's one-off session key, and O signs the start transaction only if it is byte-for-byte the one O expects (`checkOffer` in `Play.tsx`): its own wallet and session, the opponent's, and the chosen stake.
+Entering the queue asks the wallet to sign a short message (no fee) naming the wallet, session key, stake and join time; other clients drop entries whose signature doesn't verify, so nobody can queue in someone else's name. A player who doesn't sign the start transaction in time is taken out of the queue until they press "I'm back". Players are only matched with others who picked the same stake. Matchmaking messages are signed with each player's one-off session key, and O signs the start transaction only if it is byte-for-byte the one O expects (`checkOffer` in `Play.tsx`): its own wallet and session, the opponent's, and the chosen stake.
 
 ### Tests
 
