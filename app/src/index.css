@@ -37,6 +37,11 @@
   .mega { margin: 0; font-family: var(--font-display); font-stretch: 125%; font-weight: 900; text-transform: uppercase; letter-spacing: -0.035em; line-height: 0.88; }
   .mega mark { color: var(--color-ink); padding: 0 0.08em; background: linear-gradient(var(--color-signal), var(--color-signal)) no-repeat left / 0% 100%; animation: wipe 0.7s 0.2s cubic-bezier(.7,0,.2,1) forwards; }
 
+  /* Wordmark: one font, size and weight throughout; SOL is the same letters, knocked out of a
+     black block that hugs the cap height. A hairline stroke offsets green-on-black looking thinner. */
+  .logo { display: inline-flex; align-items: center; font-family: var(--font-display); font-stretch: 125%; font-weight: 900; font-size: 20px; line-height: 1; letter-spacing: -0.02em; text-transform: uppercase; color: var(--color-ink); white-space: nowrap; }
+  .logo > span { margin-left: 0.06em; padding: 0.1em 0.14em 0.08em; background: var(--color-ink); color: var(--color-signal); -webkit-text-stroke: 0.025em var(--color-signal); }
+
   .num { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
 
   .panel { background: var(--color-panel); border: 3px solid var(--color-ink); box-shadow: var(--shadow-hard); display: flex; flex-direction: column; min-width: 0; }

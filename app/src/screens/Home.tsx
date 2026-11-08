@@ -8,6 +8,13 @@ import { allowedStakes, MODE_LABEL, playHref, savedMode, saveMode, savedStake, s
 import type { Address } from '@solana/kit'
 import { useWallet } from '../lib/wallet'
 
+const RULES = [
+  ['3 marks each', 'Place a 4th and your oldest one disappears.'],
+  ['Timed', '12 s per move, faster every 10 s, down to 5 s.'],
+  ['Relaxed', 'No turn clock. 3 min for the whole game.'],
+  ['Winner takes the pot', '2% of every pot feeds the jackpot.'],
+] as const
+
 /**
  * Sized to fit one screen: the headline, demo board and panels scale with the viewport
  * height as well as the width, so a laptop or a phone sees everything without scrolling.
@@ -56,11 +63,14 @@ export function Home() {
           <h1 className="mega text-[clamp(26px,min(8vw,5.2svh),96px)] lg:text-[clamp(44px,min(5.4vw,9svh),96px)]">
             Three marks.<br /><mark>No draws.</mark>
           </h1>
-          <p className="hidden max-w-[640px] text-[clamp(13px,1.8svh,16px)] text-ink-2 sm:block">
-            Pick your stake. Each player keeps three marks; place a fourth and your oldest disappears.
-            Timed: 12 s per move, a little faster every 10 s, down to 5 s. Relaxed: no turn clock, 3 min for the game.
-            The winner takes the pot; 2% feeds the jackpot.
-          </p>
+          <ul className="m-0 hidden max-w-[760px] list-none grid-cols-2 gap-2 p-0 sm:grid xl:grid-cols-4">
+            {RULES.map(([title, text]) => (
+              <li key={title} className="flex flex-col gap-1 border-[3px] border-ink bg-panel px-3 py-[clamp(6px,1.2svh,12px)]">
+                <b className="font-display text-[clamp(13px,1.8svh,16px)] font-black uppercase [font-stretch:125%]">{title}</b>
+                <span className="text-[12px] leading-snug text-ink-2">{text}</span>
+              </li>
+            ))}
+          </ul>
 
           <div className="flex min-w-0 items-start gap-[clamp(12px,2svh,28px)]">
             <div className="shrink-0" style={{ width: 'clamp(124px, min(36vw, 30svh), 340px)' }}>
