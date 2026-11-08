@@ -163,7 +163,7 @@ export function GameScreen({ id }: { id: string }) {
       {ownGame && tab.state === 'taken' && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-[3px] border-ink bg-signal px-4 py-2 font-bold">
           <span>This game is open in another tab. Play it there, or move it here.</span>
-          <button type="button" className="ghost w-auto min-h-[40px] px-4" onClick={tab.takeOver}>Play here</button>
+          <button type="button" className="ghost flat w-auto min-h-[40px] px-4" onClick={tab.takeOver}>Play here</button>
         </div>
       )}
       <main className="grid flex-1 grid-cols-1 items-start gap-5 px-4 py-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)_minmax(0,320px)] lg:gap-8 lg:px-8 lg:py-5">

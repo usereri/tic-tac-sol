@@ -63,30 +63,31 @@ export function Home() {
           <h1 className="mega text-[clamp(26px,min(8vw,5.2svh),96px)] lg:text-[clamp(44px,min(5.4vw,9svh),96px)]">
             Three marks.<br /><mark>No draws.</mark>
           </h1>
-          <ul className="m-0 hidden max-w-[760px] list-none grid-cols-2 gap-2 p-0 sm:grid xl:grid-cols-4">
+          <ul className="m-0 hidden max-w-[760px] list-none grid-cols-2 gap-3 p-0 sm:grid xl:grid-cols-4">
             {RULES.map(([title, text]) => (
-              <li key={title} className="flex flex-col gap-1 border-[3px] border-ink bg-panel px-3 py-[clamp(6px,1.2svh,12px)]">
+              <li key={title} className="flex flex-col gap-1 border-[3px] border-ink bg-panel px-3 py-[clamp(6px,1.2svh,12px)] shadow-hard-sm">
                 <b className="font-display text-[clamp(13px,1.8svh,16px)] font-black uppercase [font-stretch:125%]">{title}</b>
                 <span className="text-[12px] leading-snug text-ink-2">{text}</span>
               </li>
             ))}
           </ul>
 
-          <div className="flex min-w-0 items-start gap-[clamp(12px,2svh,28px)]">
+          {/* The two demo panels stretch to the board's height, so their bottoms and shadows line up. */}
+          <div className="flex min-w-0 items-stretch gap-[clamp(12px,2svh,28px)]">
             <div className="shrink-0" style={{ width: 'clamp(124px, min(36vw, 30svh), 340px)' }}>
               <DemoBoard className="w-full" onUpdate={(note, fees) => setDemo({ note, fees })} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <div className="panel">
+              <div className="panel flex-1">
                 <header><span className="label">Demo · auto-play</span><span className="code blink hidden sm:inline">● rec</span></header>
-                <div className="body gap-1 py-2.5">
+                <div className="body flex-1 justify-center gap-1 py-2.5">
                   <span className="label">Last move</span>
                   <b className="text-[12px] sm:text-[16px]">{demo.note}</b>
                 </div>
               </div>
-              <div className="panel">
+              <div className="panel flex-1">
                 <header><span className="label">Fees burned</span><span className="code hidden xl:inline">5,000 lam / move</span></header>
-                <div className="body gap-1 py-2.5">
+                <div className="body flex-1 justify-center gap-1 py-2.5">
                   <div className="num text-[16px] sm:text-[clamp(18px,3svh,28px)]">{demo.fees}</div>
                   <span className="label hidden xl:block">The whole demo game costs less than 0.0001 SOL</span>
                 </div>
@@ -152,11 +153,11 @@ export function Home() {
                 <span className="label normal-case tracking-normal">
                   {jackpot?.drawLeft
                     ? `One of the next ${jackpot.drawLeft} games wins it`
-                    : `Draw starts at ${sol(drawAt, 2)} SOL: one of the next ${drawGames} games wins it`}
+                    : `Draw starts at ${sol(drawAt, drawAt < 10_000_000n ? 3 : 2)} SOL: one of the next ${drawGames} games wins it`}
                 </span>
               </div>
             </div>
-            <a className="ghost h-full" href="#/leaderboard">Leaderboard ↗</a>
+            <a className="ghost h-full shadow-hard" href="#/leaderboard">Leaderboard ↗</a>
           </div>
         </aside>
       </main>
