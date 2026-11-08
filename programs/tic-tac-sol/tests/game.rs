@@ -590,9 +590,10 @@ fn jackpot_draw_starts_at_the_threshold_and_pays_a_game_in_it() {
         env.moves(&m, &[0, 3, 1, 4, 2]);
         let g = env.game(&m.game);
         if g.jackpot_won > 0 {
-            // The whole jackpot, this game's own rake included, goes to the game's winner.
-            assert_eq!(g.jackpot_won, in_jackpot + g.raked);
-            let paid = 2 * STAKE - 5 * TX_FEE - g.raked + g.jackpot_won;
+            // The game that wins the draw pays no rake and takes the whole jackpot.
+            assert_eq!(g.raked, 0);
+            assert_eq!(g.jackpot_won, in_jackpot);
+            let paid = 2 * STAKE - 5 * TX_FEE + g.jackpot_won;
             assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + env.rent(ACTIVE_LEN) + paid);
             assert_eq!(env.entry(&m.x.wallet.pubkey()).unwrap().paid, paid);
             winner = Some(m.game);

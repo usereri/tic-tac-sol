@@ -142,8 +142,9 @@ export class SupabaseTransport implements Transport {
       present.add(e.id)
       const known = this.live.get(e.id)
       if (!known || e.hb > known.hb) {
-        const { id, wallet, session, stake, joinedAt, proof } = e
-        const peer = { id, wallet, session, stake, joinedAt, proof: { message: proof.message, signature: proof.signature } }
+        const { id, wallet, session, stake, mode, joinedAt, proof } = e
+        // Keep the mode: it's part of the signed join message, so dropping it fails the proof.
+        const peer: Peer = { id, wallet, session, stake, ...((mode === 'timed' || mode === 'relaxed') && { mode }), joinedAt, proof: { message: proof.message, signature: proof.signature } }
         this.live.set(id, { peer, hb: e.hb, at: now })
       }
     }

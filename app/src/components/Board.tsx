@@ -45,20 +45,22 @@ export function Board({ board, fading, leaving, win, banner, pending, coords = t
       {COORDS.map((coord, i) => {
         const player = pending?.cell === i ? pending.player : board[i]
         const playable = !!onPlay && !!canPlay?.(i)
+        // Once the mark starts leaving, its stripes and tag go with it.
+        const fades = fading === i && leaving !== i
         const classes = [
           'cell',
           playable && 'playable',
-          fading === i && leaving !== i && 'fading',
+          fades && 'fading',
           leaving === i && 'leaving',
           win?.includes(i) && 'win',
           pending?.cell === i && 'pending',
         ].filter(Boolean).join(' ')
-        const label = `${coord}: ${player === 1 ? 'X' : player === 2 ? 'O' : 'empty'}${fading === i ? ', fades next' : ''}`
+        const label = `${coord}: ${player === 1 ? 'X' : player === 2 ? 'O' : 'empty'}${fades ? ', fades next' : ''}`
         return (
           <button key={coord} type="button" className={classes} aria-label={label} disabled={!playable} onClick={() => onPlay?.(i)}>
             {coords && <span className="coord">{coord}</span>}
             {player ? <Mark player={player} /> : null}
-            {fading === i && coords && <span className="fade-tag">fades next</span>}
+            {fades && coords && <span className="fade-tag">fades next</span>}
           </button>
         )
       })}

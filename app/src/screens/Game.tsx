@@ -282,25 +282,26 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
   const headline = winner ? <>{winner} <mark>wins.</mark></> : game.status === GameStatus.Drained ? <><mark>Drained.</mark></> : <>Split <mark>50/50.</mark></>
   const moves = game.moveCount
 
+  // On desktop everything fits one screen: sizes and gaps scale with the viewport height.
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col lg:h-svh">
       <Nav meta={<><span>Game over</span></>} />
-      <main className="grid flex-1 grid-cols-1 items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-12 lg:px-12 lg:py-8">
-        <Board className="w-full max-w-[min(460px,calc(100svh-180px))]" board={game.board} win={line} coords />
-        <section className="flex min-w-0 flex-col gap-5">
+      <main className="grid min-h-0 flex-1 grid-cols-1 items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:items-center lg:gap-12 lg:px-12 lg:py-[clamp(12px,2.4svh,32px)]">
+        <Board className="w-full max-w-[min(460px,calc(100svh-140px))]" board={game.board} win={line} coords />
+        <section className="flex min-w-0 flex-col gap-5 lg:gap-[clamp(8px,1.6svh,20px)]">
           <span className="label">{game.status === GameStatus.Split && game.mode === GameMode.Relaxed ? 'Time ran out · split 50/50' : OUTCOME[game.status]} · move {String(moves).padStart(2, '0')}</span>
           {pay.jackpotWon > 0n && <span className="chip chip-ink self-start text-[13px]">Jackpot draw · this game won {sol(pay.jackpotWon, 4)} SOL</span>}
-          <h1 className="mega text-[clamp(50px,8vw,120px)]">{headline}</h1>
+          <h1 className="mega text-[clamp(50px,8vw,120px)] lg:text-[clamp(40px,min(7vw,10svh),120px)]">{headline}</h1>
           {me !== 0 && (
             <div>
               <span className="label">You played {me === X ? 'X' : 'O'} · </span>
               <span className="label">{mineAmount > 0n ? `Sent to ${walletAddress ? short(walletAddress) : 'your wallet'}` : 'You'}</span>
-              <div className="num text-[clamp(30px,5vw,72px)]">{mineAmount > 0n ? `+${sol(mineAmount, 6)} SOL` : 'Better luck next time.'}</div>
+              <div className="num text-[clamp(30px,5vw,72px)] lg:text-[clamp(26px,min(5vw,6.5svh),72px)]">{mineAmount > 0n ? `+${sol(mineAmount, 6)} SOL` : 'Better luck next time.'}</div>
             </div>
           )}
           <div className="panel">
             <header><span className="label">Ledger</span><span className="code">{moves} moves</span></header>
-            <div className="body"><div className="kv">
+            <div className="body lg:py-[clamp(6px,1.4svh,14px)]"><div className="kv lg:[&>*]:py-[clamp(3px,0.7svh,7px)]">
               <span>Pot at start</span><span>{sol(game.initialPot, 6)} SOL</span>
               <span>Fees paid to Solana · {moves} moves</span><span>−{sol(game.feesPaid, 6)} SOL</span>
               {pay.jackpot > 0n && <><span>To the jackpot</span><span>−{sol(pay.jackpot, 6)} SOL</span></>}
@@ -310,13 +311,12 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
               <span>Gas deposit</span><span>returned to wallets</span>
             </div></div>
           </div>
-          <span className="label">The whole game cost {sol(game.feesPaid, 6)} SOL in fees.</span>
           <PlayAgain stake={game.stake} mode={game.mode === GameMode.Relaxed ? 'relaxed' : 'timed'} />
           <div className="grid grid-cols-2 gap-4">
-            <a className="ghost" href="#/">Home</a>
+            <a className="ghost lg:min-h-[clamp(36px,5svh,48px)]" href="#/">Home</a>
             {log[0]?.signature
-              ? <a className="ghost" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Explorer ↗</a>
-              : <a className="ghost" href="#/leaderboard">Leaderboard</a>}
+              ? <a className="ghost lg:min-h-[clamp(36px,5svh,48px)]" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Explorer ↗</a>
+              : <a className="ghost lg:min-h-[clamp(36px,5svh,48px)]" href="#/leaderboard">Leaderboard</a>}
           </div>
         </section>
       </main>
@@ -338,7 +338,7 @@ function PlayAgain({ stake, mode }: { stake: bigint; mode: Mode }) {
           </button>
         ))}
       </div>
-      <a className="btn" href={playHref(next, mode)}><span>Play again{mode === 'relaxed' ? ' · relaxed' : ''}</span><span className="tag">{sol(next, 2)} SOL</span></a>
+      <a className="btn lg:min-h-[clamp(48px,7svh,68px)]" href={playHref(next, mode)}><span>Play again{mode === 'relaxed' ? ' · relaxed' : ''}</span><span className="tag">{sol(next, 2)} SOL</span></a>
     </div>
   )
 }

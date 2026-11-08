@@ -79,7 +79,8 @@ fn shares(winner: u8, amount: u64) -> (u64, u64) {
 }
 
 /// Pays out the whole pot according to `status` and ends the game. `rake_bps` of the pot goes to
-/// the jackpot (all of it when drained). If a jackpot draw is running, this game may win it.
+/// the jackpot (all of it when drained). If a jackpot draw is running, this game may win it, and
+/// then it pays no rake.
 /// The rent stays in the game account until `close_game`.
 pub fn finish<'info>(
     game: &mut Account<'info, Game>,
@@ -97,8 +98,16 @@ pub fn finish<'info>(
 
     let game_info = game.to_account_info();
     let jackpot_info = jackpot.to_account_info();
+    // Each game of a running draw wins with chance 1/(games left), so every game in the draw
+    // has the same chance and the last one always wins. The winning game pays no rake.
+    let wins_draw = jackpot.draw_left > 0
+        && draw_roll(slot_hashes, &game.key())? % jackpot.draw_left as u64 == 0;
     let pot = spare_lamports(&game_info)?;
-    let rake = (pot as u128 * args.rake_bps as u128 / BPS_DENOMINATOR as u128) as u64;
+    let rake = if wins_draw {
+        0
+    } else {
+        (pot as u128 * args.rake_bps as u128 / BPS_DENOMINATOR as u128) as u64
+    };
     let prize = pot - rake;
     let (mut to_x, mut to_o) = match status {
         GameStatus::Won | GameStatus::WonByTimeout | GameStatus::Split => shares(winner, prize),
@@ -111,24 +120,20 @@ pub fn finish<'info>(
     move_lamports(&game_info, player_o, to_o)?;
     move_lamports(&game_info, &jackpot_info, to_jackpot)?;
 
-    // Each game of a running draw wins with chance 1/(games left), so every game in the draw
-    // has the same chance and the last one always wins.
     let mut jackpot_won = 0;
-    if jackpot.draw_left > 0 {
-        if draw_roll(slot_hashes, &game.key())? % jackpot.draw_left as u64 == 0 {
-            jackpot_won = spare_lamports(&jackpot_info)?;
-            let (jx, jo) = shares(winner, jackpot_won);
-            move_lamports(&jackpot_info, player_x, jx)?;
-            move_lamports(&jackpot_info, player_o, jo)?;
-            to_x += jx;
-            to_o += jo;
-            jackpot.draw_left = 0;
-            jackpot.total_paid_out = jackpot.total_paid_out.saturating_add(jackpot_won);
-            jackpot.last_game = game.key();
-            jackpot.last_win = jackpot_won;
-        } else {
-            jackpot.draw_left -= 1;
-        }
+    if wins_draw {
+        jackpot_won = spare_lamports(&jackpot_info)?;
+        let (jx, jo) = shares(winner, jackpot_won);
+        move_lamports(&jackpot_info, player_x, jx)?;
+        move_lamports(&jackpot_info, player_o, jo)?;
+        to_x += jx;
+        to_o += jo;
+        jackpot.draw_left = 0;
+        jackpot.total_paid_out = jackpot.total_paid_out.saturating_add(jackpot_won);
+        jackpot.last_game = game.key();
+        jackpot.last_win = jackpot_won;
+    } else if jackpot.draw_left > 0 {
+        jackpot.draw_left -= 1;
     } else if spare_lamports(&jackpot_info)? >= args.draw_threshold {
         jackpot.draw_left = args.draw_games;
     }
