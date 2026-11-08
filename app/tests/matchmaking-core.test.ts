@@ -41,6 +41,7 @@ type EntryOptions = {
   /** The session address, which is also the id. */
   session?: string
   stake?: string
+  mode?: 'timed' | 'relaxed'
   joinedAt?: number
   cluster?: string
   /** Who actually signs the proof; the wallet unless a test says otherwise. */
@@ -51,16 +52,16 @@ type EntryOptions = {
 async function makeEntry(o: EntryOptions = {}): Promise<Peer> {
   const wallet = o.wallet ?? (await generateKeyPairSigner())
   const session = o.session ?? (await generateKeyPairSigner()).address
-  const fields = { wallet: wallet.address, session, stake: o.stake ?? '1000', joinedAt: o.joinedAt ?? 1 }
+  const fields = { wallet: wallet.address, session, stake: o.stake ?? '1000', ...(o.mode && { mode: o.mode }), joinedAt: o.joinedAt ?? 1 }
   const message = joinMessage({ ...fields, cluster: o.cluster ?? CLUSTER })
   const signature = base58.decode(await signBytes((o.signer ?? wallet).keyPair.privateKey, utf8.encode(message)))
   return { id: session, ...fields, proof: { message, signature } }
 }
 
 /** Enter the queue with a proof signed by the player's wallet. */
-async function join(p: Player, joinedAt: number, stake = 1n, proof?: JoinProof) {
-  proof ??= (await makeEntry({ wallet: p.wallet, session: p.id, stake: stake.toString(), joinedAt })).proof
-  p.mm.join({ wallet: p.wallet.address, session: p.signer, stake, joinedAt, proof })
+async function join(p: Player, joinedAt: number, stake = 1n, proof?: JoinProof, mode?: 'timed' | 'relaxed') {
+  proof ??= (await makeEntry({ wallet: p.wallet, session: p.id, stake: stake.toString(), mode, joinedAt })).proof
+  p.mm.join({ wallet: p.wallet.address, session: p.signer, stake, mode, joinedAt, proof })
   // Other players only see our entry once its proof has been checked.
   await drain()
 }
@@ -197,6 +198,20 @@ describe('stake buckets', () => {
     expect(b.pairs).toEqual([])
     expect(a.t.sent).toEqual([])
     expect(b.t.sent).toEqual([])
+  })
+
+  it('never pairs a timed player with a relaxed one, but pairs within a mode', async () => {
+    const [a, b, c] = await makeMany(3)
+    await join(a, 1, 1n)
+    await join(b, 2, 1n, undefined, 'relaxed')
+    await step(3000)
+    expect(a.pairs).toEqual([])
+    expect(b.pairs).toEqual([])
+    await join(c, 3, 1n, undefined, 'relaxed')
+    await step(3000)
+    expect(a.pairs).toEqual([])
+    expect(b.pairs.map((p) => p.opponent.id)).toEqual([c.id])
+    expect(c.pairs.map((p) => p.opponent.mode)).toEqual(['relaxed'])
   })
 
   it('makes two pairs from four peers of the same stake', async () => {

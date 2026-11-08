@@ -77,5 +77,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 92;
+  return 110;
 }

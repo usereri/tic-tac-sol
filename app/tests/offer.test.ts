@@ -12,7 +12,7 @@ import {
   type KeyPairSigner,
 } from '@solana/kit'
 import { getTransferSolInstruction } from '@solana-program/system'
-import { findGamePda, getStartGameInstructionAsync } from '../src/program'
+import { findGamePda, GameMode, getStartGameInstructionAsync } from '../src/program'
 import { buildMessage, type Lifetime } from '../src/lib/solana'
 import { checkOffer, type Offer, type OfferContext } from '../src/lib/offer'
 
@@ -25,7 +25,7 @@ const REFUSED = /was refused/
 let xWallet: KeyPairSigner, oWallet: KeyPairSigner, xSession: KeyPairSigner, oSession: KeyPairSigner
 let lifetime: Lifetime
 
-async function makeOffer(opts: { sessionO?: Address; stake?: bigint; extra?: Instruction[]; lifetime?: Lifetime } = {}) {
+async function makeOffer(opts: { sessionO?: Address; stake?: bigint; mode?: GameMode; extra?: Instruction[]; lifetime?: Lifetime } = {}) {
   const ix = await getStartGameInstructionAsync({
     playerX: xWallet,
     playerO: createNoopSigner(oWallet.address),
@@ -33,6 +33,7 @@ async function makeOffer(opts: { sessionO?: Address; stake?: bigint; extra?: Ins
     sessionO: opts.sessionO ?? oSession.address,
     nonce: NONCE,
     stake: opts.stake ?? STAKE,
+    mode: opts.mode ?? GameMode.Timed,
   })
   const message = await buildMessage(xWallet, [ix, ...(opts.extra ?? [])], opts.lifetime ?? lifetime)
   const tx = await partiallySignTransactionMessageWithSigners(message)
@@ -46,6 +47,7 @@ const ctx = (over: Partial<OfferContext> = {}): OfferContext => ({
   session: oSession.address,
   opponent: { wallet: xWallet.address, session: xSession.address },
   stake: STAKE,
+  mode: GameMode.Timed,
   ...over,
 })
 
@@ -71,6 +73,11 @@ describe('checkOffer', () => {
   it('rejects an appended instruction', async () => {
     const extra = getTransferSolInstruction({ source: createNoopSigner(oWallet.address), destination: xWallet.address, amount: 5n })
     await expect(checkOffer(await makeOffer({ extra: [extra] }), ctx())).rejects.toThrow(REFUSED)
+  })
+
+  it('rejects a different mode', async () => {
+    await expect(checkOffer(await makeOffer({ mode: GameMode.Relaxed }), ctx())).rejects.toThrow(REFUSED)
+    await expect(checkOffer(await makeOffer(), ctx({ mode: GameMode.Relaxed }))).rejects.toThrow(REFUSED)
   })
 
   it('rejects a different stake', async () => {
@@ -141,6 +148,7 @@ describe('checkOffer', () => {
       sessionO: oSession.address,
       nonce: NONCE,
       stake: STAKE,
+      mode: GameMode.Timed,
     })
     await expect(checkOffer(await makeOffer({ extra: [ix] }), ctx())).rejects.toThrow(/exactly one game instruction/)
   })

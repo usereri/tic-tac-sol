@@ -6,28 +6,32 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type ClientWithRpc, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type GetAccountInfoApi, type GetMultipleAccountsApi, type HasAddress, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
+import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type ClientWithRpc, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type GetAccountInfoApi, type GetMultipleAccountsApi, type HasAddress, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
 
 export const JACKPOT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([140, 46, 88, 182, 39, 85, 23, 131]);
 
 export function getJackpotDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(JACKPOT_DISCRIMINATOR); }
 
 export type Jackpot = { discriminator: ReadonlyUint8Array; 
-/** Drained games that contributed since the last payout. */
-drainedCount: number; totalPaidOut: bigint; bump: number;  };
+/** Games left in the running draw; 0 while no draw runs. */
+drawLeft: number; totalPaidOut: bigint; 
+/** The last game that won the jackpot, and what it won. */
+lastGame: Address; lastWin: bigint; bump: number;  };
 
 export type JackpotArgs = { 
-/** Drained games that contributed since the last payout. */
-drainedCount: number; totalPaidOut: number | bigint; bump: number;  };
+/** Games left in the running draw; 0 while no draw runs. */
+drawLeft: number; totalPaidOut: number | bigint; 
+/** The last game that won the jackpot, and what it won. */
+lastGame: Address | HasAddress; lastWin: number | bigint; bump: number;  };
 
 /** Gets the encoder for {@link JackpotArgs} account data. */
 export function getJackpotEncoder(): FixedSizeEncoder<JackpotArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['drainedCount', getU8Encoder()], ['totalPaidOut', getU64Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: JACKPOT_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['drawLeft', getU8Encoder()], ['totalPaidOut', getU64Encoder()], ['lastGame', getAddressEncoder()], ['lastWin', getU64Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: JACKPOT_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link Jackpot} account data. */
 export function getJackpotDecoder(): FixedSizeDecoder<Jackpot> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['drainedCount', getU8Decoder()], ['totalPaidOut', getU64Decoder()], ['bump', getU8Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['drawLeft', getU8Decoder()], ['totalPaidOut', getU64Decoder()], ['lastGame', getAddressDecoder()], ['lastWin', getU64Decoder()], ['bump', getU8Decoder()]]);
 }
 
 /** Gets the codec for {@link Jackpot} account data. */
@@ -80,5 +84,5 @@ export async function fetchAllMaybeJackpot(
 }
 
 export function getJackpotSize(): number {
-  return 18;
+  return 58;
 }

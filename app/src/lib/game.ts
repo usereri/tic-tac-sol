@@ -18,6 +18,7 @@ import {
   getGameSize,
   getJackpotSize,
   getMakeMoveInstructionAsync,
+  GameMode,
   GameStatus,
   type Settings,
   type Game,
@@ -26,7 +27,7 @@ import { rpc, rpcSubscriptions, send, type Sent } from './solana'
 
 export const X = 1
 export const O = 2
-export { GameStatus }
+export { GameMode, GameStatus }
 export type { Game }
 
 /* ---------------- Reads ---------------- */
@@ -53,8 +54,10 @@ export function useConfig() {
   return { config, error }
 }
 
+export type JackpotView = { balance: bigint; drawLeft: number; lastWin: bigint }
+
 export function useJackpot() {
-  const [jackpot, setJackpot] = useState<{ balance: bigint; drained: number } | null>(null)
+  const [jackpot, setJackpot] = useState<JackpotView | null>(null)
   useEffect(() => {
     let live = true
     ;(async () => {
@@ -64,7 +67,7 @@ export function useJackpot() {
         rpc.getMinimumBalanceForRentExemption(BigInt(getJackpotSize())).send(),
       ])
       if (live && account.exists) {
-        setJackpot({ balance: account.lamports - rent, drained: account.data.drainedCount })
+        setJackpot({ balance: account.lamports - rent, drawLeft: account.data.drawLeft, lastWin: account.data.lastWin })
       }
     })().catch(() => {})
     return () => {
@@ -139,6 +142,29 @@ export function useSlot() {
     return () => abort.abort()
   }, [])
   return slot
+}
+
+/**
+ * Keeps one tab in charge of a game. Another tab of the same browser that opens it sees `taken`
+ * and can `takeOver`, which moves the game to it and sends the first tab to `taken`.
+ */
+export function useTabLock(name: string | null) {
+  const [state, setState] = useState<'checking' | 'mine' | 'taken'>('checking')
+  const [takeovers, setTakeovers] = useState(0)
+  useEffect(() => {
+    if (!name || !navigator.locks) return setState('mine')
+    let release = () => {}
+    const held = new Promise<void>((r) => (release = r))
+    navigator.locks
+      .request(name, takeovers > 0 ? { steal: true } : { ifAvailable: true }, async (lock) => {
+        if (!lock) return setState('taken')
+        setState('mine')
+        await held
+      })
+      .catch(() => setState('taken')) // another tab took it over
+    return () => release()
+  }, [name, takeovers])
+  return { state, takeOver: () => setTakeovers((n) => n + 1) }
 }
 
 /** The game this wallet is still playing, if any. The lock account only exists during a game. */
@@ -222,10 +248,23 @@ export function turnSlotsAt(start: bigint, elapsed: bigint) {
   return reduced > floor ? reduced : floor
 }
 
-/** Slots the player to move has in this turn, as the program's `deadline()` counts them. */
-export function turnWindow(game: Game, start: bigint) {
-  const slots = turnSlotsAt(start, game.lastActionSlot - game.startedSlot)
-  return game.moveCount === 0 ? slots + START_GRACE_SLOTS : slots
+/**
+ * The program's `deadline()`: the last slot the player to move may act in, and how many slots
+ * the current turn (timed) or the whole game (relaxed) had in total.
+ */
+export function turnDeadline(game: Game, config: Pick<Settings, 'turnSlots' | 'relaxedSlots'>) {
+  if (game.mode === GameMode.Relaxed) {
+    return { deadline: game.startedSlot + config.relaxedSlots, window: config.relaxedSlots }
+  }
+  const slots = turnSlotsAt(config.turnSlots, game.lastActionSlot - game.startedSlot)
+  const window = game.moveCount === 0 ? slots + START_GRACE_SLOTS : slots
+  return { deadline: game.lastActionSlot + window, window }
+}
+
+/** After this slot anyone may settle 50/50 (the program's `abandoned_after`). */
+export function abandonedAfter(game: Game, config: Pick<Settings, 'turnSlots' | 'relaxedSlots' | 'abandonSlots'>) {
+  const { deadline } = turnDeadline(game, config)
+  return game.mode === GameMode.Relaxed ? deadline : deadline + config.abandonSlots
 }
 
 export const WIN_LINES = [
@@ -252,18 +291,21 @@ export function winningLine(board: ArrayLike<number>, player: number) {
   return WIN_LINES.find((line) => line.every((c) => board[c] === player)) ?? null
 }
 
-/** What each side got, derived from the final state (pot = initial pot − fees). */
+/** All to X, all to O, or halves with the odd lamport to O, like the program's `shares`. */
+function shares(winner: number, amount: bigint) {
+  if (winner === X) return { x: amount, o: 0n }
+  if (winner === O) return { x: 0n, o: amount }
+  return { x: amount / 2n, o: amount - amount / 2n }
+}
+
+/**
+ * What each side got, from the final state: the pot (initial pot − fees) minus what went to the
+ * jackpot, plus any jackpot this game won in a draw.
+ */
 export function payouts(game: Game) {
-  const pot = game.initialPot - game.feesPaid
-  switch (game.status) {
-    case GameStatus.Won:
-    case GameStatus.WonByTimeout:
-      return game.winner === X ? { x: pot, o: 0n, jackpot: 0n } : { x: 0n, o: pot, jackpot: 0n }
-    case GameStatus.Split:
-      return { x: pot / 2n, o: pot / 2n, jackpot: pot % 2n }
-    case GameStatus.Drained:
-      return { x: 0n, o: 0n, jackpot: pot }
-    default:
-      return { x: 0n, o: 0n, jackpot: 0n }
-  }
+  if (game.status === GameStatus.Active) return { x: 0n, o: 0n, jackpot: 0n, jackpotWon: 0n }
+  const prize = game.initialPot - game.feesPaid - game.raked
+  const pot = game.status === GameStatus.Drained ? { x: 0n, o: 0n } : shares(game.winner, prize)
+  const won = shares(game.winner, game.jackpotWon)
+  return { x: pot.x + won.x, o: pot.o + won.o, jackpot: game.raked, jackpotWon: game.jackpotWon }
 }

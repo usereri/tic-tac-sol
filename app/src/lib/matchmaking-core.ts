@@ -36,13 +36,20 @@ export type Peer = {
   session: string
   /** Lamports, in decimal. */
   stake: string
+  /** Players are only matched within the same stake and mode. Missing means timed. */
+  mode?: 'timed' | 'relaxed'
   joinedAt: number
   proof: JoinProof
 }
 
 /** What the wallet signs to enter the queue. Shown to the player, so keep it readable. */
-export function joinMessage(p: { wallet: string; session: string; stake: string; joinedAt: number; cluster: string }) {
-  return `Tic-Tac-Sol: join the queue\nwallet: ${p.wallet}\nsession: ${p.session}\nstake: ${p.stake} lamports\ncluster: ${p.cluster}\njoined: ${p.joinedAt}`
+export function joinMessage(p: { wallet: string; session: string; stake: string; mode?: string; joinedAt: number; cluster: string }) {
+  return `Tic-Tac-Sol: join the queue\nwallet: ${p.wallet}\nsession: ${p.session}\nstake: ${p.stake} lamports\nmode: ${p.mode ?? 'timed'}\ncluster: ${p.cluster}\njoined: ${p.joinedAt}`
+}
+
+/** The line a peer waits in: same stake, same mode. */
+export function lineOf(p: Pick<Peer, 'stake' | 'mode'>) {
+  return `${p.stake}:${p.mode ?? 'timed'}`
 }
 
 export type Direct =
@@ -149,8 +156,8 @@ export class Matchmaker {
    * Enter the queue with a proof signed by the wallet over `joinMessage(...)`. Rejoin with the
    * same `joinedAt` and proof to keep your place after a failed match.
    */
-  join({ wallet, session, stake, joinedAt, proof }: { wallet: string; session: KeyPairSigner; stake: bigint; joinedAt: number; proof: JoinProof }) {
-    const me = { id: session.address, wallet, session: session.address, stake: stake.toString(), joinedAt, proof }
+  join({ wallet, session, stake, mode, joinedAt, proof }: { wallet: string; session: KeyPairSigner; stake: bigint; mode?: Peer['mode']; joinedAt: number; proof: JoinProof }) {
+    const me: Peer = { id: session.address, wallet, session: session.address, stake: stake.toString(), ...(mode && { mode }), joinedAt, proof }
     this.me = me
     this.signer = session
     this.paired = null
@@ -246,13 +253,13 @@ export class Matchmaker {
     return peers.sort(byAge)
   }
 
-  /** Our stake's line, oldest first. Only a wallet's oldest entry counts, so nobody meets themselves. */
+  /** Our stake and mode's line, oldest first. Only a wallet's oldest entry counts, so nobody meets themselves. */
   private line(me: Peer) {
     const wallets = new Set<string>()
     return this.queue().filter((p) => {
       const first = !wallets.has(p.wallet)
       wallets.add(p.wallet)
-      return first && p.stake === me.stake
+      return first && lineOf(p) === lineOf(me)
     })
   }
 

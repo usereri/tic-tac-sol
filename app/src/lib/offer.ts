@@ -11,7 +11,7 @@ import {
   type Rpc,
   type TransactionSigner,
 } from '@solana/kit'
-import { findGamePda, getStartGameInstructionAsync, TIC_TAC_SOL_PROGRAM_ADDRESS } from '../program'
+import { findGamePda, getStartGameInstructionAsync, TIC_TAC_SOL_PROGRAM_ADDRESS, type GameMode } from '../program'
 import { rpc as defaultRpc, type Lifetime } from './solana'
 
 /** X's partly-signed start_game, as received by O. */
@@ -23,6 +23,7 @@ export type OfferContext = {
   session: Address
   opponent: { wallet: string; session: string }
   stake: bigint
+  mode: GameMode
 }
 
 /**
@@ -47,12 +48,12 @@ function refuse(reason: string): never {
 
 /**
  * O checks X's offer before signing: the fee payer is the opponent, there is exactly one
- * start_game with the accounts and data O expects (both wallets, both sessions, the chosen stake,
- * the nonce, the game), and anything else is a known wallet add-on that doesn't touch O.
+ * start_game with the accounts and data O expects (both wallets, both sessions, the chosen stake
+ * and mode, the nonce, the game), and anything else is a known wallet add-on that doesn't touch O.
  */
 export async function checkOffer(
   offer: Offer,
-  { wallet, session, opponent, stake }: OfferContext,
+  { wallet, session, opponent, stake, mode }: OfferContext,
   rpc: Rpc<GetMultipleAccountsApi> = defaultRpc,
 ) {
   const tx = getTransactionDecoder().decode(getBase64Encoder().encode(offer.tx))
@@ -69,6 +70,7 @@ export async function checkOffer(
     sessionO: session,
     nonce: offer.nonce,
     stake,
+    mode,
   })
   const [game] = await findGamePda({ playerX: xWallet, nonce: offer.nonce })
   if (game !== offer.game) refuse('it is for a different game')
@@ -81,7 +83,7 @@ export async function checkOffer(
   if (accounts.length !== expectedAccounts.length || accounts.some((a, i) => a !== expectedAccounts[i])) {
     refuse('its accounts differ from this match (wallets, sessions or game)')
   }
-  if (!ix.data || !sameBytes(ix.data, expected.data)) refuse('the stake or game data differ')
+  if (!ix.data || !sameBytes(ix.data, expected.data)) refuse('the stake, mode or game data differ')
 
   const mine = new Set<string>([wallet.address, session])
   for (const other of message.instructions) {

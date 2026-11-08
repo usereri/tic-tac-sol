@@ -10,7 +10,7 @@ import { Matchmaker } from './matchmaking-core'
 import { SupabaseTransport } from './matchmaking-supabase'
 import { CLUSTER } from './solana'
 
-export { joinMessage, type Direct, type JoinProof, type Pairing, type Peer } from './matchmaking-core'
+export { joinMessage, lineOf, type Direct, type JoinProof, type Pairing, type Peer } from './matchmaking-core'
 
 const SUPABASE_URL: string | undefined = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY: string | undefined = import.meta.env.VITE_SUPABASE_ANON_KEY

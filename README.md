@@ -5,12 +5,16 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
 ## Rules
 
 - Each player keeps at most 3 marks. Placing a 4th removes your oldest one first, and you can't place on the cell it just left.
-- Three in a row wins the whole pot, minus the real tx fees paid during the game.
-- Turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 25 slots (≈ 10 s) since the game started it gets 2 slots shorter, never below 12 slots (≈ 4.8 s). The first move gets 25 extra slots (≈ 10 s), because X only hears the game started a few seconds after the start transaction lands.
+- Three in a row wins the pot, minus the real tx fees paid during the game and a 2% rake to the jackpot.
+- Two modes, picked on the home page; players are only matched within the same stake and mode.
+- **Relaxed:** no turn clock. The whole game has `relaxed_slots` (450 ≈ 3 min); when it runs out, anyone can settle it 50/50.
+- **Timed:** the turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 25 slots (≈ 10 s) since the game started it gets 2 slots shorter, never below 12 slots (≈ 4.8 s). The first move gets 25 extra slots (≈ 10 s), because X only hears the game started a few seconds after the start transaction lands.
   - Idle player had moved before → the waiting player claims the pot (`claim_timeout`).
   - Idle player never moved → 50/50 split.
   - Nobody claims within `abandon_slots` after the deadline → anyone can settle 50/50 (`settle_abandoned`).
-- Safety net: if fees ever burn the pot below 10% of its initial value, the rest goes to the jackpot. After `jackpot_every` (10) such games, the next game gets the whole jackpot added to its pot.
+- Safety net: if fees ever burn the pot below 10% of its initial value, the rest goes to the jackpot.
+- Jackpot draw: once the jackpot holds `draw_threshold` (0.5 SOL), one of the next `draw_games` (10) games to finish wins all of it (its winner, or both halves on a split). Each game in the draw wins with chance 1/(games left), so every game has the same chance and the last one always wins. The randomness is the newest slot hash mixed with the game key and slot: fine for devnet, but a validator or a player timing the finishing move could bias it. A VRF oracle is the production fix.
+- In the app, the board locks 2 s before the real deadline and the clock counts down to that point, so a last-moment move still lands.
 
 ## Program
 
@@ -18,19 +22,20 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
 
 | Instruction | Signer | Notes |
 | --- | --- | --- |
-| `init_config(args)` / `update_config(args)` | admin | Creates/tunes `Config` and creates `Jackpot` |
-| `start_game(nonce, stake)` | both players' wallets | Atomic: stake must be within `min_stake..=max_stake`; both stakes in, both one-off wallets funded with `gas_deposit`, game PDA `["game", player_x, nonce]` created |
+| `init_config(args)` / `update_config(args)` | admin | Creates/tunes `Config` and creates `Jackpot` (seeds `config_v2`, `jackpot_v2`) |
+| `init_leaderboard` | admin | Creates the `Leaderboard` once; it survives config versions |
+| `start_game(nonce, stake, mode)` | both players' wallets | Atomic: stake must be within `min_stake..=max_stake`; both stakes in, both one-off wallets funded with `gas_deposit`, game PDA `["game", player_x, nonce]` created |
 | (start_game) | | Also creates each wallet's one-game lock `["active", wallet]` and rejects a wallet that is already in a game (`PlayerBusy`). The lock is closed when the game ends and its rent goes back to the player |
 | `make_move(cell)` | one-off wallet of the player to move | Escrow pays the fee back to the signer |
 | `claim_timeout` | one-off wallet of the waiting player | Within the claim window after a missed deadline |
-| `settle_abandoned` | anyone | After the claim window, 50/50. Signer's fee is refunded |
+| `settle_abandoned` | anyone | After the claim window (timed) or once a relaxed game runs out, 50/50. Signer's fee is refunded |
 | `close_game` | anyone | Ended games only. Rent goes back to X |
 
-Every game end records both wallets (games played/won, SOL staked/paid) on a shared top-50 `Leaderboard` account `["leaderboard"]`, created and paid for by the admin in `init_config`. It's keyed by the real wallet, never the one-off session key, and feeds the in-app leaderboard (`#/leaderboard`). When the board is full, a newcomer replaces the lowest-net entry only if it's doing better. Players pay no net rent: the game account's rent returns to X on `close_game`, and each lock's rent returns at game end.
+Every game end records both wallets (games played/won, SOL staked/paid) on a shared top-50 `Leaderboard` account `["leaderboard"]`, created and paid for by the admin with `init_leaderboard`. It's keyed by the real wallet, never the one-off session key, and feeds the in-app leaderboard (`#/leaderboard`). When the board is full, a newcomer replaces the lowest-net entry only if it's doing better. Players pay no net rent: the game account's rent returns to X on `close_game`, and each lock's rent returns at game end.
 
 The pot is always the game account's lamports above its rent-exempt minimum. Events `GameStarted`, `MoveMade` and `GameEnded` carry everything the UI needs.
 
-Default config for devnet: min_stake `10_000_000`, max_stake `1_000_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `30` (start of the speeding-up clock), abandon_slots `150`, drain_floor_bps `1_000`, jackpot_every `10`.
+Default config for devnet: min_stake `10_000_000`, max_stake `1_000_000_000`, gas_deposit `1_000_000`, fee_refund `5_000`, turn_slots `30` (start of the speeding-up clock), abandon_slots `150`, drain_floor_bps `1_000`, rake_bps `200`, draw_threshold `500_000_000`, draw_games `10`, relaxed_slots `450`.
 
 ## Develop
 

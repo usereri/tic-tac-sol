@@ -7,13 +7,13 @@
  */
 
 import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBooleanDecoder, getBooleanEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU32Decoder, getU32Encoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type ClientWithRpc, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type GetAccountInfoApi, type GetMultipleAccountsApi, type HasAddress, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
-import { getGameStatusDecoder, getGameStatusEncoder, type GameStatus, type GameStatusArgs } from '../types';
+import { getGameModeDecoder, getGameModeEncoder, getGameStatusDecoder, getGameStatusEncoder, type GameMode, type GameModeArgs, type GameStatus, type GameStatusArgs } from '../types';
 
 export const GAME_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([27, 90, 166, 125, 74, 100, 121, 18]);
 
 export function getGameDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(GAME_DISCRIMINATOR); }
 
-export type Game = { discriminator: ReadonlyUint8Array; playerX: Address; playerO: Address; sessionX: Address; sessionO: Address; status: GameStatus; 
+export type Game = { discriminator: ReadonlyUint8Array; playerX: Address; playerO: Address; sessionX: Address; sessionO: Address; status: GameStatus; mode: GameMode; 
 /** `X` or `O`. */
 turn: number; 
 /** `X`, `O`, or `EMPTY` when there is no winner. */
@@ -21,11 +21,15 @@ winner: number; board: ReadonlyUint8Array;
 /** Cells of each player's marks, oldest first. */
 queueX: ReadonlyUint8Array; queueO: ReadonlyUint8Array; lenX: number; lenO: number; movedX: boolean; movedO: boolean; moveCount: number; initialPot: bigint; 
 /** Lamports each player staked, chosen by the players within the config limits. */
-stake: bigint; jackpotBonus: bigint; feesPaid: bigint; lastActionSlot: bigint; 
+stake: bigint; feesPaid: bigint; 
+/** Lamports of the pot that went to the jackpot when the game ended. */
+raked: bigint; 
+/** Jackpot lamports this game won in a draw, paid on top of the pot. */
+jackpotWon: bigint; lastActionSlot: bigint; 
 /** Slot the game started in; drives the speeding-up turn clock. */
 startedSlot: bigint; nonce: bigint; bump: number;  };
 
-export type GameArgs = { playerX: Address | HasAddress; playerO: Address | HasAddress; sessionX: Address | HasAddress; sessionO: Address | HasAddress; status: GameStatusArgs; 
+export type GameArgs = { playerX: Address | HasAddress; playerO: Address | HasAddress; sessionX: Address | HasAddress; sessionO: Address | HasAddress; status: GameStatusArgs; mode: GameModeArgs; 
 /** `X` or `O`. */
 turn: number; 
 /** `X`, `O`, or `EMPTY` when there is no winner. */
@@ -33,18 +37,22 @@ winner: number; board: ReadonlyUint8Array;
 /** Cells of each player's marks, oldest first. */
 queueX: ReadonlyUint8Array; queueO: ReadonlyUint8Array; lenX: number; lenO: number; movedX: boolean; movedO: boolean; moveCount: number; initialPot: number | bigint; 
 /** Lamports each player staked, chosen by the players within the config limits. */
-stake: number | bigint; jackpotBonus: number | bigint; feesPaid: number | bigint; lastActionSlot: number | bigint; 
+stake: number | bigint; feesPaid: number | bigint; 
+/** Lamports of the pot that went to the jackpot when the game ended. */
+raked: number | bigint; 
+/** Jackpot lamports this game won in a draw, paid on top of the pot. */
+jackpotWon: number | bigint; lastActionSlot: number | bigint; 
 /** Slot the game started in; drives the speeding-up turn clock. */
 startedSlot: number | bigint; nonce: number | bigint; bump: number;  };
 
 /** Gets the encoder for {@link GameArgs} account data. */
 export function getGameEncoder(): FixedSizeEncoder<GameArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['playerX', getAddressEncoder()], ['playerO', getAddressEncoder()], ['sessionX', getAddressEncoder()], ['sessionO', getAddressEncoder()], ['status', getGameStatusEncoder()], ['turn', getU8Encoder()], ['winner', getU8Encoder()], ['board', fixEncoderSize(getBytesEncoder(), 9)], ['queueX', fixEncoderSize(getBytesEncoder(), 3)], ['queueO', fixEncoderSize(getBytesEncoder(), 3)], ['lenX', getU8Encoder()], ['lenO', getU8Encoder()], ['movedX', getBooleanEncoder()], ['movedO', getBooleanEncoder()], ['moveCount', getU32Encoder()], ['initialPot', getU64Encoder()], ['stake', getU64Encoder()], ['jackpotBonus', getU64Encoder()], ['feesPaid', getU64Encoder()], ['lastActionSlot', getU64Encoder()], ['startedSlot', getU64Encoder()], ['nonce', getU64Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: GAME_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['playerX', getAddressEncoder()], ['playerO', getAddressEncoder()], ['sessionX', getAddressEncoder()], ['sessionO', getAddressEncoder()], ['status', getGameStatusEncoder()], ['mode', getGameModeEncoder()], ['turn', getU8Encoder()], ['winner', getU8Encoder()], ['board', fixEncoderSize(getBytesEncoder(), 9)], ['queueX', fixEncoderSize(getBytesEncoder(), 3)], ['queueO', fixEncoderSize(getBytesEncoder(), 3)], ['lenX', getU8Encoder()], ['lenO', getU8Encoder()], ['movedX', getBooleanEncoder()], ['movedO', getBooleanEncoder()], ['moveCount', getU32Encoder()], ['initialPot', getU64Encoder()], ['stake', getU64Encoder()], ['feesPaid', getU64Encoder()], ['raked', getU64Encoder()], ['jackpotWon', getU64Encoder()], ['lastActionSlot', getU64Encoder()], ['startedSlot', getU64Encoder()], ['nonce', getU64Encoder()], ['bump', getU8Encoder()]]), (value) => ({ ...value, discriminator: GAME_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link Game} account data. */
 export function getGameDecoder(): FixedSizeDecoder<Game> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['playerX', getAddressDecoder()], ['playerO', getAddressDecoder()], ['sessionX', getAddressDecoder()], ['sessionO', getAddressDecoder()], ['status', getGameStatusDecoder()], ['turn', getU8Decoder()], ['winner', getU8Decoder()], ['board', fixDecoderSize(getBytesDecoder(), 9)], ['queueX', fixDecoderSize(getBytesDecoder(), 3)], ['queueO', fixDecoderSize(getBytesDecoder(), 3)], ['lenX', getU8Decoder()], ['lenO', getU8Decoder()], ['movedX', getBooleanDecoder()], ['movedO', getBooleanDecoder()], ['moveCount', getU32Decoder()], ['initialPot', getU64Decoder()], ['stake', getU64Decoder()], ['jackpotBonus', getU64Decoder()], ['feesPaid', getU64Decoder()], ['lastActionSlot', getU64Decoder()], ['startedSlot', getU64Decoder()], ['nonce', getU64Decoder()], ['bump', getU8Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['playerX', getAddressDecoder()], ['playerO', getAddressDecoder()], ['sessionX', getAddressDecoder()], ['sessionO', getAddressDecoder()], ['status', getGameStatusDecoder()], ['mode', getGameModeDecoder()], ['turn', getU8Decoder()], ['winner', getU8Decoder()], ['board', fixDecoderSize(getBytesDecoder(), 9)], ['queueX', fixDecoderSize(getBytesDecoder(), 3)], ['queueO', fixDecoderSize(getBytesDecoder(), 3)], ['lenX', getU8Decoder()], ['lenO', getU8Decoder()], ['movedX', getBooleanDecoder()], ['movedO', getBooleanDecoder()], ['moveCount', getU32Decoder()], ['initialPot', getU64Decoder()], ['stake', getU64Decoder()], ['feesPaid', getU64Decoder()], ['raked', getU64Decoder()], ['jackpotWon', getU64Decoder()], ['lastActionSlot', getU64Decoder()], ['startedSlot', getU64Decoder()], ['nonce', getU64Decoder()], ['bump', getU8Decoder()]]);
 }
 
 /** Gets the codec for {@link Game} account data. */
@@ -97,5 +105,5 @@ export async function fetchAllMaybeGame(
 }
 
 export function getGameSize(): number {
-  return 219;
+  return 228;
 }

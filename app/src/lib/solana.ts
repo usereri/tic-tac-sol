@@ -99,13 +99,18 @@ export function wireBase64(tx: Transaction) {
   return getBase64EncodedWireTransaction(tx)
 }
 
+/** The player dismissed the wallet popup. */
+export function isRejection(err: unknown) {
+  return /reject/i.test((err as { message?: string })?.message ?? '')
+}
+
 /** Readable message for a failed transaction (program error, rejection, etc.). */
 export function describeError(err: unknown): string {
   const e = err as { message?: string; context?: { logs?: string[] }; cause?: unknown }
   const logs = e?.context?.logs ?? (e?.cause as { context?: { logs?: string[] } })?.context?.logs
   const anchor = logs?.map((l) => /Error Message: (.*)$/.exec(l)?.[1]).find(Boolean)
   if (anchor) return anchor
-  if (/reject/i.test(e?.message ?? '')) return 'You rejected the request in your wallet. Nothing was signed or paid.'
+  if (isRejection(err)) return "You didn't sign, so nothing was sent or paid."
   if (/blockhash/i.test(e?.message ?? '')) {
     return `Your wallet couldn't verify this transaction's blockhash. Make sure it's set to ${CLUSTER === 'devnet' ? 'Devnet (Phantom: Settings → Developer Settings → Testnet Mode → Solana Devnet)' : 'the same network as the game'}, then press Sign again.`
   }
