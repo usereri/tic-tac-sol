@@ -78,11 +78,15 @@ export function Home() {
           </ul>
         </section>
 
-        {/* The two demo panels stretch to the board's height, so their bottoms and shadows line up. */}
+        {/*
+          The two demo panels stretch to the board's height, so their bottoms and shadows line up.
+          On desktop the board instead takes the row's height, which the right column sets (an
+          alert there makes it taller), so the board grows with it rather than leaving a gap.
+        */}
         <section className="order-2 flex min-w-0 lg:order-none lg:row-start-2">
           <div className="flex min-w-0 flex-1 items-stretch gap-[clamp(12px,2svh,28px)]">
-            <div className="shrink-0" style={{ width: 'clamp(124px, min(36vw, 30svh), 340px)' }}>
-              <DemoBoard className="w-full" onUpdate={(note, fees) => setDemo({ note, fees })} />
+            <div className="w-[clamp(124px,min(36vw,30svh),340px)] shrink-0 lg:aspect-square lg:h-full lg:w-auto lg:max-w-[50%]">
+              <DemoBoard className="w-full lg:h-full" onUpdate={(note, fees) => setDemo({ note, fees })} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-3">
               <div className="panel flex-1">

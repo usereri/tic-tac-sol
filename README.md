@@ -2,10 +2,29 @@
 
 Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it: 0.01–0.25 SOL in the app, config allows 0.01–1 SOL), every move is an on-chain transaction, and the escrow pays every move's fee.
 
+- **Play it:** https://usereri.github.io/tic-tac-sol/ (Solana devnet, Phantom or any Wallet Standard wallet switched to devnet)
+- **Program:** [`9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5`](https://explorer.solana.com/address/9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5?cluster=devnet) on devnet
+- **Pitch:** `pitch/deck/index.html` (30 s deck with speaker notes) and `pitch/demo-video/index.html` (demo video shot list); open them in a browser.
+
+## How it works
+
+1. Pick a mode and a stake and enter the queue. The wallet signs a free message that proves the queue entry is yours; nothing is paid yet.
+2. When two players pair, each wallet signs **one** transaction: `start_game` takes both stakes into the game account, plus a small gas deposit (0.001 SOL) for each player's one-off session wallet. So a 0.01 SOL stake asks for 0.011 SOL.
+3. Every move is signed by the session wallet in the browser, with no wallet popup. The escrow refunds each move's fee from the pot, so the session wallet never runs dry.
+4. When the game ends the program pays the pot out right away, frees both wallets for their next game, and returns the lock rent. The session wallet's leftover gas deposit is swept back to the player's wallet.
+
+```
+repo
+├── programs/tic-tac-sol   Anchor program + LiteSVM tests
+├── app                    Vite/React client, Codama client in app/src/program, init-config script
+├── pitch                  deck + demo video plan
+└── .github/workflows      GitHub Pages deploy
+```
+
 ## Rules
 
 - Each player keeps at most 3 marks. Placing a 4th removes your oldest one first, and you can't place on the cell it just left.
-- Three in a row wins the pot, minus the real tx fees paid during the game and a 2% rake to the jackpot.
+- Three in a row wins the pot, minus the real tx fees paid during the game and a 2% rake to the jackpot (`rake_bps`). A game that wins the jackpot draw pays no rake.
 - Two modes, picked on the home page; players are only matched within the same stake and mode.
 - **Relaxed:** no turn clock. The whole game has `relaxed_slots` (450 ≈ 3 min); when it runs out, anyone can settle it 50/50.
 - **Timed:** the turn deadline speeds up with game time: a turn starts at `turn_slots` (30 slots ≈ 12 s); every 25 slots (≈ 10 s) since the game started it gets 2 slots shorter, never below 12 slots (≈ 4.8 s). The first move gets 25 extra slots (≈ 10 s), because X only hears the game started a few seconds after the start transaction lands.
@@ -13,7 +32,7 @@ Infinite tic-tac-toe on Solana. Both players stake the same amount (they pick it
   - Idle player never moved → 50/50 split.
   - Nobody claims within `abandon_slots` after the deadline → anyone can settle 50/50 (`settle_abandoned`).
 - Safety net: if fees ever burn the pot below 10% of its initial value, the rest goes to the jackpot.
-- Jackpot draw: once the jackpot holds `draw_threshold` (0.5 SOL), one of the next `draw_games` (10) games to finish wins all of it (its winner, or both halves on a split). Each game in the draw wins with chance 1/(games left), so every game has the same chance and the last one always wins. The randomness is the newest slot hash mixed with the game key and slot: fine for devnet, but a validator or a player timing the finishing move could bias it. A VRF oracle is the production fix.
+- Jackpot draw: once the jackpot holds `draw_threshold` (0.5 SOL), one of the next `draw_games` (10) games to finish wins all of it (its winner, or both halves on a split), on top of its pot with no rake taken. Each game in the draw wins with chance 1/(games left), so every game has the same chance and the last one always wins. The randomness is the newest slot hash mixed with the game key and slot: fine for devnet, but a validator or a player timing the finishing move could bias it. A VRF oracle is the production fix.
 - In the app, the board locks 2 s before the real deadline and the clock counts down to that point, so a last-moment move still lands.
 
 ## Program
@@ -53,6 +72,17 @@ anchor deploy --provider.cluster devnet
 
 The program keypair lives in `target/deploy/tic_tac_sol-keypair.json`, and `target/` is gitignored. Back the keypair up, or the program ID changes on the next deploy.
 
+Upgrade tips:
+
+- **Program grew:** an upgrade fails if the new `.so` is bigger than the program account. Extend it first (at least 10240 bytes at a time): `solana program extend 9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5 10240 -u devnet`.
+- **Rate limits:** the public devnet RPC often answers 429, which the CLI can report as `AccountNotFound` or an expired blockhash. Use a dedicated RPC with no domain restriction, plus a priority fee:
+  ```sh
+  solana program deploy target/deploy/tic_tac_sol.so --program-id target/deploy/tic_tac_sol-keypair.json \
+    -u '<your devnet RPC>' --with-compute-unit-price 10000 --max-sign-attempts 30
+  ```
+  A failed deploy leaves a buffer holding SOL: `solana program close --buffers -u devnet` returns it.
+- **"Failed to initialize IDL"** after `anchor deploy` is harmless: the program is upgraded. Use `--no-idl`, or `anchor idl upgrade` to refresh the on-chain IDL.
+
 ## App (`app/`)
 
 Vite + React + TypeScript + Tailwind v4, `@solana/kit` with a Codama-generated client in `app/src/program`.
@@ -91,6 +121,7 @@ One-time setup:
    anchor deploy --provider.cluster devnet
    cd app && RPC_URL=https://api.devnet.solana.com npx tsx scripts/init-config.ts
    ```
+   Running `init-config.ts` again updates the config. `DRAW_THRESHOLD` and `DRAW_GAMES` override the draw settings, e.g. `DRAW_THRESHOLD=1000000 DRAW_GAMES=2` to see a draw pay out after a few games. Config and jackpot live under the `config_v2` / `jackpot_v2` seeds; accounts from older program versions are no longer read. The leaderboard is kept across versions.
 
 Players need Phantom (or another Wallet Standard wallet) switched to devnet; the dev wallet only exists on localnet.
 
@@ -105,11 +136,13 @@ Without Supabase env vars the app pairs tabs of one browser (`BroadcastChannel`)
 
 For local cross-device testing, put both variables in `app/.env.local`.
 
-Entering the queue asks the wallet to sign a short message (no fee) naming the wallet, session key, stake and join time; other clients drop entries whose signature doesn't verify, so nobody can queue in someone else's name. A player who doesn't sign the start transaction in time is taken out of the queue until they press "I'm back". Players are only matched with others who picked the same stake. Matchmaking messages are signed with each player's one-off session key, and O signs the start transaction only if it is byte-for-byte the one O expects (`checkOffer` in `Play.tsx`): its own wallet and session, the opponent's, and the chosen stake.
+Entering the queue asks the wallet to sign a short message (no fee) naming the wallet, session key, stake, mode and join time; other clients drop entries whose signature doesn't verify, so nobody can queue in someone else's name. A player who doesn't sign the start transaction in time is taken out of the queue until they press "I'm back". Players are only matched with others who picked the same stake and mode, and one wallet can wait in one queue at a time. Matchmaking messages are signed with each player's one-off session key, and O signs the start transaction only if it is byte-for-byte the one O expects (`checkOffer` in `app/src/lib/offer.ts`): its own wallet and session, the opponent's, the chosen stake and the mode.
+
+A game can only be played in one tab at a time (Web Locks); another tab shows "Play here" to take it over. Closing the tab mid-game doesn't lose the stakes: the game settles by the rules above (timeout or 50/50), and the home page offers to resume it.
 
 ### Tests
 
 ```sh
-anchor test            # program (LiteSVM)
-cd app && npm test     # matchmaking logic (vitest)
+anchor test            # program (LiteSVM): moves, fading marks, clocks, timeouts, rake, jackpot draw, relaxed mode
+cd app && npm test     # vitest: matchmaking, Supabase transport, start-offer checks
 ```
