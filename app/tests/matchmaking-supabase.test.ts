@@ -344,6 +344,12 @@ describe('SupabaseTransport', () => {
       expect(t.peers()).toEqual([{ ...peer('a'), proof: { message: 'm', signature: 's' } }])
     })
 
+    it('keeps a known mode, which the join proof covers, and drops any other', () => {
+      last().status('SUBSCRIBED')
+      present({ ...entry('a', 1), mode: 'relaxed' }, { ...entry('b', 1), mode: 'timed' }, { ...entry('c', 1), mode: 'turbo' })
+      expect(t.peers()).toEqual([{ ...peer('a'), mode: 'relaxed' }, { ...peer('b'), mode: 'timed' }, peer('c')])
+    })
+
     it('ignores entries without stake or hb', () => {
       last().status('SUBSCRIBED')
       present({ ...peer('a'), hb: 1, stake: undefined }, { ...peer('b') }, entry('c', 1))
