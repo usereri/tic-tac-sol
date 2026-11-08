@@ -41,7 +41,7 @@ const settings: SettingsArgs = {
   drainFloorBps: 1_000, // 10%
   rakeBps: 200, // 2% of every pot to the jackpot
   drawThreshold: BigInt(process.env.DRAW_THRESHOLD ?? 500_000_000), // 0.5 SOL starts a draw...
-  drawGames: 10, // ...over the next 10 games
+  drawGames: Number(process.env.DRAW_GAMES ?? 10), // ...over the next 10 games
   relaxedSlots: 450n, // ≈ 3 min for a whole relaxed game
 }
 
