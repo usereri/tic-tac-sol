@@ -335,14 +335,15 @@ export function Play({ stake, mode }: { stake: bigint; mode: Mode }) {
                 : <>In the<br /><mark>queue<span className="blink">_</span></mark></>}
         </h1>
 
-        <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,1fr)_80px_minmax(0,1fr)] md:gap-6">
+        {/* Both slabs share one fixed height, so switching opponent states never moves anything. */}
+        <div className="grid grid-cols-1 gap-3 md:h-[clamp(170px,26svh,220px)] md:grid-cols-[minmax(0,1fr)_80px_minmax(0,1fr)] md:gap-6">
           <Slab player={iAmX || !pairing ? 1 : 2} who={`You · ${pairing ? (iAmX ? 'X' : 'O') : '?'}`} address={wallet.address} note={pairing ? (iAmX ? 'moves first' : 'moves second') : 'waiting'} active />
-          <span className="text-center font-display text-[22px] font-black [font-stretch:125%] md:text-[56px]">VS</span>
+          <span className="self-center text-center font-display text-[22px] font-black [font-stretch:125%] md:text-[56px]">VS</span>
           {opponent
             ? <Slab player={iAmX ? 2 : 1} who={`Opponent · ${iAmX ? 'O' : 'X'}`} address={opponent.wallet} note={`waited ${Math.max(0, Math.round((Date.now() - opponent.joinedAt) / 1000))} s`} />
             : out
               ? <OutPanel out={out} other={otherEntry} onJoin={() => join(out === 'away')} />
-              : <div className="panel"><header><span className="label">Opponent</span><span className="code">{count <= 1 ? 'nobody else yet' : `${count} in queue`}</span></header><div className="body"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
+              : <div className="panel min-h-[150px] md:min-h-0"><header><span className="label">Opponent</span><span className="code">{count <= 1 ? 'nobody else yet' : `${count} in queue`}</span></header><div className="body flex-1 justify-center"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
         </div>
 
         <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,380px)] md:gap-6">
@@ -371,8 +372,10 @@ export function Play({ stake, mode }: { stake: bigint; mode: Mode }) {
               <span>{phase === 'signing' || phase === 'sending' ? 'Signing…' : 'Sign & stake'}</span>
               <span className="tag">{sol(stake + gas, 3)} SOL</span>
             </button>
-            {error ? <Alert>{error}</Alert> : <span className="label text-center">Nothing is paid unless both sign</span>}
+            <span className="label text-center">Nothing is paid unless both sign</span>
             <a className="ghost" href="#/">Leave queue</a>
+            {/* Last, so an error only adds space below and nothing above it moves. */}
+            {error && <Alert>{error}</Alert>}
           </div>
         </div>
       </main>
@@ -393,12 +396,12 @@ function OutPanel({ out, other, onJoin }: { out: keyof typeof OUT_TEXT; other: P
     ? `This wallet is already waiting at ${sol(BigInt(other.stake), 2)} SOL (${MODE_LABEL[other.mode ?? 'timed']}) in another tab or on another device. One queue at a time: leave that one to play here.`
     : OUT_TEXT[out].text
   return (
-    <div className="panel">
+    <div className="panel min-h-[150px] md:min-h-0">
       <header><span className="label">Opponent</span><span className="code">{out === 'joining' ? 'waiting for wallet' : 'not queued'}</span></header>
-      <div className="body">
-        <span className="num text-[22px] md:text-[34px]">{title}{out === 'joining' && <span className="blink">…</span>}</span>
+      <div className="body flex-1 justify-center gap-2 overflow-hidden">
+        <span className="num text-[22px] md:text-[clamp(22px,3.6svh,34px)]">{title}{out === 'joining' && <span className="blink">…</span>}</span>
         <span className="text-ink-2">{text}</span>
-        {action && <button type="button" className="ghost" onClick={onJoin}>{action}</button>}
+        {action && <button type="button" className="ghost min-h-[40px]" onClick={onJoin}>{action}</button>}
       </div>
     </div>
   )
@@ -408,7 +411,7 @@ function Slab({ player, who, address, note, active }: { player: number; who: str
   return (
     <div className="panel" style={active ? { background: 'var(--color-signal)' } : undefined}>
       <header><span className="label text-ink">{who}</span><span className="code text-ink">{note}</span></header>
-      <div className="body flex-row items-center gap-4 py-2.5 md:gap-6 md:py-[clamp(10px,2svh,22px)]">
+      <div className="body flex-1 flex-row items-center gap-4 py-2.5 md:gap-6 md:py-[clamp(10px,2svh,22px)]">
         <span className="size-[40px] shrink-0 md:size-[clamp(48px,9svh,96px)]"><Mark player={player} /></span>
         <span className="num min-w-0 truncate text-[22px] md:text-[40px]">{short(address)}</span>
       </div>

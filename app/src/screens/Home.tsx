@@ -12,7 +12,7 @@ const RULES = [
   ['3 marks each', 'Place a 4th and your oldest one disappears.'],
   ['Timed', '12 s per move, faster every 10 s, down to 5 s.'],
   ['Relaxed', 'No turn clock. 3 min for the whole game.'],
-  ['Winner takes the pot', '2% of every pot feeds the jackpot.'],
+  ['Winner takes all', 'The pot minus fees; 2% of it feeds the jackpot.'],
 ] as const
 
 /**
@@ -57,23 +57,30 @@ export function Home() {
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
       <Nav />
-      <main className="grid min-h-0 flex-1 grid-cols-1 content-start gap-[clamp(12px,2.2svh,28px)] px-4 py-[clamp(10px,2.2svh,24px)] md:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:content-center lg:gap-12">
-        <section className="flex min-w-0 flex-col gap-[clamp(10px,2svh,22px)]">
+      {/*
+        On desktop a 2×2 grid: the rule tiles end where the matchmaking panel ends, and the demo
+        panels end where the jackpot row ends. On phones one column: intro, demo, matchmaking, play.
+      */}
+      <main className="grid min-h-0 flex-1 grid-cols-1 content-start gap-[clamp(12px,2.2svh,28px)] px-4 py-[clamp(10px,2.2svh,24px)] md:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:content-center lg:gap-x-12 lg:gap-y-[clamp(14px,2.4svh,28px)]">
+        <section className="order-1 flex min-w-0 flex-col justify-end gap-[clamp(10px,2svh,22px)] lg:order-none">
           <span className="label hidden sm:block">Infinite tic-tac-toe · on-chain · v0.1</span>
           <h1 className="mega text-[clamp(26px,min(8vw,5.2svh),96px)] lg:text-[clamp(44px,min(5.4vw,9svh),96px)]">
             Three marks.<br /><mark>No draws.</mark>
           </h1>
           <ul className="m-0 hidden max-w-[760px] list-none grid-cols-2 gap-3 p-0 sm:grid xl:grid-cols-4">
             {RULES.map(([title, text]) => (
-              <li key={title} className="flex flex-col gap-1 border-[3px] border-ink bg-panel px-3 py-[clamp(6px,1.2svh,12px)] shadow-hard-sm">
-                <b className="font-display text-[clamp(13px,1.8svh,16px)] font-black uppercase [font-stretch:125%]">{title}</b>
+              <li key={title} className="flex flex-col gap-1 border-[3px] border-ink bg-panel px-3 py-[clamp(6px,1.2svh,12px)] shadow-hard-sm [container-type:inline-size]">
+                {/* One line in every tile, so the descriptions start at the same height. */}
+                <b className="whitespace-nowrap font-display text-[min(16px,8cqi)] font-black uppercase [font-stretch:125%]">{title}</b>
                 <span className="text-[12px] leading-snug text-ink-2">{text}</span>
               </li>
             ))}
           </ul>
+        </section>
 
-          {/* The two demo panels stretch to the board's height, so their bottoms and shadows line up. */}
-          <div className="flex min-w-0 items-stretch gap-[clamp(12px,2svh,28px)]">
+        {/* The two demo panels stretch to the board's height, so their bottoms and shadows line up. */}
+        <section className="order-2 flex min-w-0 lg:order-none lg:row-start-2">
+          <div className="flex min-w-0 flex-1 items-stretch gap-[clamp(12px,2svh,28px)]">
             <div className="shrink-0" style={{ width: 'clamp(124px, min(36vw, 30svh), 340px)' }}>
               <DemoBoard className="w-full" onUpdate={(note, fees) => setDemo({ note, fees })} />
             </div>
@@ -96,39 +103,40 @@ export function Home() {
           </div>
         </section>
 
-        <aside className="flex min-w-0 flex-col gap-[clamp(10px,2svh,20px)]">
-          <div className="panel">
-            <header><span className="label">Matchmaking · FIFO</span><span className="code">{waiting} waiting · pot {sol(stake * 2n, 2)}</span></header>
-            <div className="body gap-3 py-3">
-              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Game mode">
-                {(['timed', 'relaxed'] as const).map((m) => (
-                  <button key={m} type="button" aria-pressed={m === mode} onClick={() => pickMode(m)}
-                    className={`border-[3px] border-ink px-1 py-1.5 text-[13px] font-bold uppercase tracking-[0.06em] ${m === mode ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
-                    {MODE_LABEL[m]}
-                  </button>
-                ))}
+        <div className="panel order-3 lg:order-none lg:col-start-2 lg:row-start-1">
+          <header><span className="label">Matchmaking · FIFO</span><span className="code">{waiting} waiting · pot {sol(stake * 2n, 2)}</span></header>
+          <div className="body flex-1 justify-between gap-3 py-3">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Game mode">
+              {(['timed', 'relaxed'] as const).map((m) => (
+                <button key={m} type="button" aria-pressed={m === mode} onClick={() => pickMode(m)}
+                  className={`border-[3px] border-ink px-1 py-1.5 text-[13px] font-bold uppercase tracking-[0.06em] ${m === mode ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
+                  {MODE_LABEL[m]}
+                </button>
+              ))}
+            </div>
+            <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+              <legend className="label mb-2">Stake per player</legend>
+              <div className="grid grid-cols-4 gap-2">
+                {choices.map((s) => {
+                  const count = lineFor(s)
+                  return (
+                    <button key={String(s)} type="button" aria-pressed={s === stake} onClick={() => pick(s)}
+                      className={`flex min-w-0 flex-col items-center border-[3px] border-ink px-1 py-1.5 font-bold ${s === stake ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
+                      <span>{sol(s, 2)}</span>
+                      <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-80">{count ? `${count} wait` : 'SOL'}</span>
+                    </button>
+                  )
+                })}
               </div>
-              <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-                <legend className="label mb-2">Stake per player</legend>
-                <div className="grid grid-cols-4 gap-2">
-                  {choices.map((s) => {
-                    const count = lineFor(s)
-                    return (
-                      <button key={String(s)} type="button" aria-pressed={s === stake} onClick={() => pick(s)}
-                        className={`flex min-w-0 flex-col items-center border-[3px] border-ink px-1 py-1.5 font-bold ${s === stake ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
-                        <span>{sol(s, 2)}</span>
-                        <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-80">{count ? `${count} wait` : 'SOL'}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </fieldset>
-              <div className="kv hidden text-[13px] sm:grid">
-                <span>Pot</span><span>{sol(stake * 2n, 2)} SOL</span>
-                <span>Gas deposit (refunded)</span><span>{sol(gas, 3)} SOL</span>
-              </div>
+            </fieldset>
+            <div className="kv hidden text-[13px] sm:grid">
+              <span>Pot</span><span>{sol(stake * 2n, 2)} SOL</span>
+              <span>Gas deposit (refunded)</span><span>{sol(gas, 3)} SOL</span>
             </div>
           </div>
+        </div>
+
+        <aside className="order-4 flex min-w-0 flex-col gap-[clamp(10px,2svh,20px)] lg:order-none lg:col-start-2 lg:row-start-2">
           {unfinished ? (
             <a className="btn min-h-[clamp(50px,7svh,68px)] text-[16px] sm:text-[20px]" href={`#/game/${unfinished}`}>
               <span>Resume your game</span>
@@ -145,7 +153,7 @@ export function Home() {
             <Alert>This wallet is already in the queue at {sol(BigInt(queuedElsewhere.stake), 2)} SOL ({MODE_LABEL[queuedElsewhere.mode ?? 'timed']}) in another tab or device. One queue at a time.</Alert>
           )}
           {error && <Alert>{error}</Alert>}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid flex-1 grid-cols-2 gap-3">
             <div className="panel">
               <header><span className="label">Jackpot</span><span className="code">{jackpot?.drawLeft ? 'draw on' : '2% / game'}</span></header>
               <div className="body gap-1 py-2">
