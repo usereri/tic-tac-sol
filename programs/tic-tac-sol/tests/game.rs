@@ -10,8 +10,8 @@ use {
     solana_signer::Signer,
     solana_transaction::versioned::VersionedTransaction,
     tic_tac_sol::{
-        accounts, instruction, Settings, Game, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
-        ACTIVE_SEED, BoardEntry, Leaderboard, BOARD_SIZE, GAME_SEED, JACKPOT_SEED, LEADERBOARD_SEED, O, START_GRACE_SLOTS, X,
+        accounts, instruction, Settings, Game, GameMode, GameStatus, Jackpot, CONFIG_SEED, EMPTY,
+        ACTIVE_SEED, BoardEntry, Leaderboard, BOARD_SIZE, GAME_SEED, JACKPOT_SEED, LEADERBOARD_SEED, O, SLOT_HASHES_ID, START_GRACE_SLOTS, X,
     },
 };
 
@@ -35,7 +35,11 @@ fn default_args() -> Settings {
         turn_slots: 12,
         abandon_slots: 150,
         drain_floor_bps: 1_000,
-        jackpot_every: 10,
+        // No rake and no draw by default, so payouts are easy to check; tested on their own below.
+        rake_bps: 0,
+        draw_threshold: u64::MAX,
+        draw_games: 10,
+        relaxed_slots: 450,
     }
 }
 
@@ -61,6 +65,8 @@ struct Env {
     config: Pubkey,
     jackpot: Pubkey,
     leaderboard: Pubkey,
+    /// Mode of the games `start` creates.
+    mode: GameMode,
 }
 
 struct Match {
@@ -88,6 +94,7 @@ impl Env {
             config,
             jackpot,
             leaderboard,
+            mode: GameMode::Timed,
         };
         let ix = env.ix(
             instruction::InitConfig { args }.data(),
@@ -95,12 +102,22 @@ impl Env {
                 admin: env.admin.pubkey(),
                 config,
                 jackpot,
-                leaderboard,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
         );
         let admin = env.admin.insecure_clone();
+        env.send(ix, &[&admin]).unwrap();
+        let ix = env.ix(
+            instruction::InitLeaderboard {}.data(),
+            accounts::InitLeaderboard {
+                admin: admin.pubkey(),
+                config,
+                leaderboard,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+        );
         env.send(ix, &[&admin]).unwrap();
         env
     }
@@ -156,6 +173,10 @@ impl Env {
         self.svm.get_account(&active_pda(wallet)).map_or(false, |a| a.lamports > 0)
     }
 
+    fn jackpot_rent(&self) -> u64 {
+        self.rent(self.svm.get_account(&self.jackpot).unwrap().data.len())
+    }
+
     fn jackpot(&self) -> Jackpot {
         let account = self.svm.get_account(&self.jackpot).unwrap();
         Jackpot::try_deserialize(&mut account.data.as_slice()).unwrap()
@@ -172,14 +193,13 @@ impl Env {
         )
         .0;
         let ix = self.ix(
-            instruction::StartGame { nonce, stake }.data(),
+            instruction::StartGame { nonce, stake, mode: self.mode }.data(),
             accounts::StartGame {
                 player_x: x.wallet.pubkey(),
                 player_o: o.wallet.pubkey(),
                 session_x: x.session.pubkey(),
                 session_o: o.session.pubkey(),
                 config: self.config,
-                jackpot: self.jackpot,
                 game,
                 active_x: active_pda(&x.wallet.pubkey()),
                 active_o: active_pda(&o.wallet.pubkey()),
@@ -211,6 +231,7 @@ impl Env {
                 active_x: active_pda(&m.x.wallet.pubkey()),
                 active_o: active_pda(&m.o.wallet.pubkey()),
                 leaderboard: self.leaderboard,
+                slot_hashes: SLOT_HASHES_ID,
             }
             .to_account_metas(None),
         )
@@ -501,12 +522,11 @@ fn non_winning_cell(g: &Game) -> u8 {
 }
 
 #[test]
-fn drained_game_feeds_jackpot_and_next_game_gets_it() {
+fn drained_game_feeds_jackpot() {
     // Inflate the refund so fees can burn the pot within a few moves:
     // 0.1 SOL pot, 0.0095 per move -> below the 10% floor on move 10.
     let mut env = Env::new(Settings {
         fee_refund: 9_500_000,
-        jackpot_every: 1,
         ..default_args()
     });
     let m = env.start();
@@ -520,21 +540,100 @@ fn drained_game_feeds_jackpot_and_next_game_gets_it() {
     assert_eq!(g.status, GameStatus::Drained);
     assert_eq!(g.move_count, 10);
     let leftover = 100_000_000 - 10 * 9_500_000;
+    assert_eq!(g.raked, leftover);
     assert_eq!(env.pot(&m.game), 0);
-    assert_eq!(env.jackpot().drained_count, 1);
-    let jackpot_rent = env.rent(env.svm.get_account(&env.jackpot).unwrap().data.len());
-    assert_eq!(env.balance(&env.jackpot), jackpot_rent + leftover);
+    assert_eq!(env.balance(&env.jackpot), env.jackpot_rent() + leftover);
+}
 
-    // jackpot_every = 1: the very next game gets the jackpot.
-    let next = env.start();
-    let g = env.game(&next.game);
-    assert_eq!(g.jackpot_bonus, leftover);
-    assert_eq!(g.initial_pot, 100_000_000 + leftover);
-    assert_eq!(env.pot(&next.game), 100_000_000 + leftover);
+#[test]
+fn rake_goes_to_the_jackpot() {
+    let mut env = Env::new(Settings {
+        rake_bps: 200,
+        ..default_args()
+    });
+    let m = env.start();
+    let bx = env.balance(&m.x.wallet.pubkey());
+    let lock_rent = env.rent(ACTIVE_LEN);
+    env.moves(&m, &[0, 3, 1, 4, 2]); // X wins on its third move
+
+    let pot = 2 * STAKE - 5 * TX_FEE;
+    let rake = pot * 200 / 10_000;
+    let g = env.game(&m.game);
+    assert_eq!(g.status, GameStatus::Won);
+    assert_eq!(g.raked, rake);
+    assert_eq!(g.jackpot_won, 0);
+    assert_eq!(env.balance(&env.jackpot), env.jackpot_rent() + rake);
+    // X's three move fees were refunded to X's session, not X's wallet.
+    assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + lock_rent + pot - rake);
+}
+
+#[test]
+fn jackpot_draw_starts_at_the_threshold_and_pays_a_game_in_it() {
+    // Every finished game rakes 1% of ~0.1 SOL = ~0.001 SOL. The first game fills the
+    // jackpot past the threshold and starts a draw over the next 2 games.
+    let mut env = Env::new(Settings {
+        rake_bps: 100,
+        draw_threshold: 900_000,
+        draw_games: 2,
+        ..default_args()
+    });
+    let first = env.start();
+    env.moves(&first, &[0, 3, 1, 4, 2]);
+    assert_eq!(env.jackpot().draw_left, 2);
+
+    // One of the next two games wins; the last game of a draw always does.
+    let mut winner = None;
+    for _ in 0..2 {
+        let in_jackpot = env.balance(&env.jackpot) - env.jackpot_rent();
+        let m = env.start();
+        let bx = env.balance(&m.x.wallet.pubkey());
+        env.moves(&m, &[0, 3, 1, 4, 2]);
+        let g = env.game(&m.game);
+        if g.jackpot_won > 0 {
+            // The whole jackpot, this game's own rake included, goes to the game's winner.
+            assert_eq!(g.jackpot_won, in_jackpot + g.raked);
+            let paid = 2 * STAKE - 5 * TX_FEE - g.raked + g.jackpot_won;
+            assert_eq!(env.balance(&m.x.wallet.pubkey()), bx + env.rent(ACTIVE_LEN) + paid);
+            assert_eq!(env.entry(&m.x.wallet.pubkey()).unwrap().paid, paid);
+            winner = Some(m.game);
+            break;
+        }
+        assert_eq!(env.jackpot().draw_left, 1);
+    }
+    let game = winner.expect("the draw must pay out within its games");
     let j = env.jackpot();
-    assert_eq!(j.drained_count, 0);
-    assert_eq!(j.total_paid_out, leftover);
-    assert_eq!(env.balance(&env.jackpot), jackpot_rent);
+    assert_eq!(j.draw_left, 0);
+    assert_eq!(j.last_game, game);
+    assert_eq!(j.total_paid_out, j.last_win);
+    assert_eq!(env.balance(&env.jackpot), env.jackpot_rent());
+}
+
+#[test]
+fn relaxed_game_has_no_turn_clock_and_splits_when_time_runs_out() {
+    let mut env = Env::new(default_args());
+    env.mode = GameMode::Relaxed;
+    let m = env.start();
+    assert_eq!(env.game(&m.game).mode, GameMode::Relaxed);
+
+    // Long thinks are fine as long as the game's 450 slots aren't up.
+    env.warp(200);
+    env.moves(&m, &[0]);
+    env.warp(200);
+    env.moves(&m, &[4]);
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), SOL).unwrap();
+    assert_err(env.try_settle(&m, &stranger), "NotAbandoned");
+    env.warp(50); // slot 450 exactly: still playable
+    env.moves(&m, &[8]);
+
+    env.warp(1);
+    let cell = non_winning_cell(&env.game(&m.game));
+    assert_err(env.try_move(&m, &m.o.session, cell), "TurnExpired");
+    // O had moved, but running out of time in relaxed mode is a split, never a loss.
+    env.try_settle(&m, &stranger).unwrap();
+    let g = env.game(&m.game);
+    assert_eq!(g.status, GameStatus::Split);
+    assert_eq!(g.winner, EMPTY);
 }
 
 #[test]
@@ -709,7 +808,6 @@ fn splits_credit_both_halves_and_close_locks() {
 fn drained_game_records_play_but_no_payout() {
     let mut env = Env::new(Settings {
         fee_refund: 9_500_000,
-        jackpot_every: 1,
         ..default_args()
     });
     let m = env.start();
