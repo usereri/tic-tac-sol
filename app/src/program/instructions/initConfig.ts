@@ -8,7 +8,7 @@
 
 import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, SolanaError, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { getAccountMetaFactory, type InstructionAccountInput, type InstructionAccountInputAddress, type InstructionSignerInput, type ResolvedInstructionAccount, type ResolvedInstructionAccountMeta } from '@solana/program-client-core';
-import { findConfigPda, findJackpotPda, findLeaderboardPda } from '../pdas';
+import { findConfigPda, findJackpotPda } from '../pdas';
 import { TIC_TAC_SOL_PROGRAM_ADDRESS } from '../programs';
 import { getSettingsDecoder, getSettingsEncoder, type Settings, type SettingsArgs } from '../types';
 
@@ -16,8 +16,8 @@ export const INIT_CONFIG_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([23,
 
 export function getInitConfigDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(INIT_CONFIG_DISCRIMINATOR); }
 
-export type InitConfigInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountAdmin extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountJackpot extends string | AccountMeta<string> = string, TAccountLeaderboard extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAdmin extends string ? WritableSignerAccount<TAccountAdmin> & AccountSignerMeta<TAccountAdmin> : TAccountAdmin, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountJackpot extends string ? WritableAccount<TAccountJackpot> : TAccountJackpot, TAccountLeaderboard extends string ? WritableAccount<TAccountLeaderboard> : TAccountLeaderboard, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
+export type InitConfigInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountAdmin extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountJackpot extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAdmin extends string ? WritableSignerAccount<TAccountAdmin> & AccountSignerMeta<TAccountAdmin> : TAccountAdmin, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountJackpot extends string ? WritableAccount<TAccountJackpot> : TAccountJackpot, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
 export type InitConfigInstructionData = { discriminator: ReadonlyUint8Array; args: Settings;  };
 
@@ -35,16 +35,15 @@ export function getInitConfigInstructionDataCodec(): FixedSizeCodec<InitConfigIn
     return combineCodec(getInitConfigInstructionDataEncoder(), getInitConfigInstructionDataDecoder());
 }
 
-export type InitConfigAsyncInput<TAccountAdmin extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type InitConfigAsyncInput<TAccountAdmin extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   admin: TAccountAdmin;
 config?: TAccountConfig;
 jackpot?: TAccountJackpot;
-leaderboard?: TAccountLeaderboard;
 systemProgram?: TAccountSystemProgram;
 args: InitConfigInstructionDataArgs["args"];
 }
 
-export async function getInitConfigInstructionAsync<TAccountAdmin extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: InitConfigAsyncInput<TAccountAdmin, TAccountConfig, TAccountJackpot, TAccountLeaderboard, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>> {
+export async function getInitConfigInstructionAsync<TAccountAdmin extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: InitConfigAsyncInput<TAccountAdmin, TAccountConfig, TAccountJackpot, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -53,7 +52,7 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { admin: { value: input.admin ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, leaderboard: { value: input.leaderboard ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { admin: { value: input.admin ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -68,26 +67,22 @@ accounts.config.value = await findConfigPda({ programAddress });
 if (!accounts.jackpot.value) {
 accounts.jackpot.value = await findJackpotPda({ programAddress });
 }
-if (!accounts.leaderboard.value) {
-accounts.leaderboard.value = await findLeaderboardPda({ programAddress });
-}
 if (!accounts.systemProgram.value) {
 accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("admin", accounts.admin), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("leaderboard", accounts.leaderboard), getAccountMeta("systemProgram", accounts.systemProgram)], data: getInitConfigInstructionDataEncoder().encode(args as InitConfigInstructionDataArgs), programAddress } as InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("admin", accounts.admin), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("systemProgram", accounts.systemProgram)], data: getInitConfigInstructionDataEncoder().encode(args as InitConfigInstructionDataArgs), programAddress } as InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
 }
 
-export type InitConfigInput<TAccountAdmin extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type InitConfigInput<TAccountAdmin extends InstructionSignerInput = InstructionSignerInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   admin: TAccountAdmin;
 config: TAccountConfig;
 jackpot: TAccountJackpot;
-leaderboard: TAccountLeaderboard;
 systemProgram?: TAccountSystemProgram;
 args: InitConfigInstructionDataArgs["args"];
 }
 
-export function getInitConfigInstruction<TAccountAdmin extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountLeaderboard extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: InitConfigInput<TAccountAdmin, TAccountConfig, TAccountJackpot, TAccountLeaderboard, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>> {
+export function getInitConfigInstruction<TAccountAdmin extends InstructionSignerInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: InitConfigInput<TAccountAdmin, TAccountConfig, TAccountJackpot, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -96,7 +91,7 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { admin: { value: input.admin ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, leaderboard: { value: input.leaderboard ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { admin: { value: input.admin ?? null, isSigner: true, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: true }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -109,7 +104,7 @@ if (!accounts.systemProgram.value) {
 accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("admin", accounts.admin), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("leaderboard", accounts.leaderboard), getAccountMeta("systemProgram", accounts.systemProgram)], data: getInitConfigInstructionDataEncoder().encode(args as InitConfigInstructionDataArgs), programAddress } as InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountLeaderboard, InstructionAccountInputAddress<TAccountLeaderboard>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("admin", accounts.admin), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("systemProgram", accounts.systemProgram)], data: getInitConfigInstructionDataEncoder().encode(args as InitConfigInstructionDataArgs), programAddress } as InitConfigInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
 }
 
 export type ParsedInitConfigInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -117,14 +112,13 @@ accounts: {
 admin: TAccountMetas[0];
 config: TAccountMetas[1];
 jackpot: TAccountMetas[2];
-leaderboard: TAccountMetas[3];
-systemProgram: TAccountMetas[4];
+systemProgram: TAccountMetas[3];
 };
 data: InitConfigInstructionData; };
 
 export function parseInitConfigInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>): ParsedInitConfigInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
-  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 5 });
+  if (instruction.accounts.length < 4) {
+  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 4 });
 }
 let accountIndex = 0;
 const getNextAccount = () => {
@@ -132,5 +126,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { admin: getNextAccount(), config: getNextAccount(), jackpot: getNextAccount(), leaderboard: getNextAccount(), systemProgram: getNextAccount() }, data: getInitConfigInstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { admin: getNextAccount(), config: getNextAccount(), jackpot: getNextAccount(), systemProgram: getNextAccount() }, data: getInitConfigInstructionDataDecoder().decode(instruction.data) };
 }

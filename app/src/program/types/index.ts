@@ -7,5 +7,6 @@
  */
 
 export * from './boardEntry';
+export * from './gameMode';
 export * from './gameStatus';
 export * from './settings';

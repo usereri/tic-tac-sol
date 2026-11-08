@@ -10,10 +10,10 @@ import type { ReadonlyUint8Array } from '@solana/kit';
 
 export const ACTIVE_SEED: ReadonlyUint8Array = new Uint8Array([97, 99, 116, 105, 118, 101]);
 
-export const CONFIG_SEED: ReadonlyUint8Array = new Uint8Array([99, 111, 110, 102, 105, 103]);
+export const CONFIG_SEED: ReadonlyUint8Array = new Uint8Array([99, 111, 110, 102, 105, 103, 95, 118, 50]);
 
 export const GAME_SEED: ReadonlyUint8Array = new Uint8Array([103, 97, 109, 101]);
 
-export const JACKPOT_SEED: ReadonlyUint8Array = new Uint8Array([106, 97, 99, 107, 112, 111, 116]);
+export const JACKPOT_SEED: ReadonlyUint8Array = new Uint8Array([106, 97, 99, 107, 112, 111, 116, 95, 118, 50]);
 
 export const LEADERBOARD_SEED: ReadonlyUint8Array = new Uint8Array([108, 101, 97, 100, 101, 114, 98, 111, 97, 114, 100]);

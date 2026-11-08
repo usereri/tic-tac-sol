@@ -13,18 +13,18 @@ export const GAME_ENDED_EVENT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array
 
 export function getGameEndedEventDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(GAME_ENDED_EVENT_DISCRIMINATOR); }
 
-export type GameEndedEvent = { game: Address; status: GameStatus; winner: number; toX: bigint; toO: bigint; toJackpot: bigint; feesPaid: bigint; moveCount: number;  };
+export type GameEndedEvent = { game: Address; status: GameStatus; winner: number; toX: bigint; toO: bigint; toJackpot: bigint; jackpotWon: bigint; feesPaid: bigint; moveCount: number;  };
 
-export type GameEndedEventArgs = { game: Address | HasAddress; status: GameStatusArgs; winner: number; toX: number | bigint; toO: number | bigint; toJackpot: number | bigint; feesPaid: number | bigint; moveCount: number;  };
+export type GameEndedEventArgs = { game: Address | HasAddress; status: GameStatusArgs; winner: number; toX: number | bigint; toO: number | bigint; toJackpot: number | bigint; jackpotWon: number | bigint; feesPaid: number | bigint; moveCount: number;  };
 
 /** Gets the encoder for {@link GameEndedEventArgs} event data. */
 export function getGameEndedEventEncoder(): FixedSizeEncoder<GameEndedEventArgs> {
-    return getHiddenPrefixEncoder(getStructEncoder([['game', getAddressEncoder()], ['status', getGameStatusEncoder()], ['winner', getU8Encoder()], ['toX', getU64Encoder()], ['toO', getU64Encoder()], ['toJackpot', getU64Encoder()], ['feesPaid', getU64Encoder()], ['moveCount', getU32Encoder()]]), [getConstantEncoder(GAME_ENDED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixEncoder(getStructEncoder([['game', getAddressEncoder()], ['status', getGameStatusEncoder()], ['winner', getU8Encoder()], ['toX', getU64Encoder()], ['toO', getU64Encoder()], ['toJackpot', getU64Encoder()], ['jackpotWon', getU64Encoder()], ['feesPaid', getU64Encoder()], ['moveCount', getU32Encoder()]]), [getConstantEncoder(GAME_ENDED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the decoder for {@link GameEndedEvent} event data. */
 export function getGameEndedEventDecoder(): FixedSizeDecoder<GameEndedEvent> {
-    return getHiddenPrefixDecoder(getStructDecoder([['game', getAddressDecoder()], ['status', getGameStatusDecoder()], ['winner', getU8Decoder()], ['toX', getU64Decoder()], ['toO', getU64Decoder()], ['toJackpot', getU64Decoder()], ['feesPaid', getU64Decoder()], ['moveCount', getU32Decoder()]]), [getConstantDecoder(GAME_ENDED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixDecoder(getStructDecoder([['game', getAddressDecoder()], ['status', getGameStatusDecoder()], ['winner', getU8Decoder()], ['toX', getU64Decoder()], ['toO', getU64Decoder()], ['toJackpot', getU64Decoder()], ['jackpotWon', getU64Decoder()], ['feesPaid', getU64Decoder()], ['moveCount', getU32Decoder()]]), [getConstantDecoder(GAME_ENDED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the codec for {@link GameEndedEvent} event data. */

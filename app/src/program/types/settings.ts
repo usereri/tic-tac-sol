@@ -23,8 +23,14 @@ turnSlots: bigint;
 abandonSlots: bigint; 
 /** The game ends as drained once the pot falls below this share of the initial pot. */
 drainFloorBps: number; 
-/** The jackpot is added to the next game after this many drained games. */
-jackpotEvery: number;  };
+/** Share of every pot that goes to the jackpot when the game ends. */
+rakeBps: number; 
+/** Once the jackpot holds this many lamports, a draw starts... */
+drawThreshold: bigint; 
+/** ...and one of the next `draw_games` games to finish wins it, picked at random. */
+drawGames: number; 
+/** Length of a relaxed game: no turn clock; when it runs out, anyone settles it 50/50. */
+relaxedSlots: bigint;  };
 
 export type SettingsArgs = { 
 /** Smallest stake (lamports, per player) a game may use. */
@@ -41,15 +47,21 @@ turnSlots: number | bigint;
 abandonSlots: number | bigint; 
 /** The game ends as drained once the pot falls below this share of the initial pot. */
 drainFloorBps: number; 
-/** The jackpot is added to the next game after this many drained games. */
-jackpotEvery: number;  };
+/** Share of every pot that goes to the jackpot when the game ends. */
+rakeBps: number; 
+/** Once the jackpot holds this many lamports, a draw starts... */
+drawThreshold: number | bigint; 
+/** ...and one of the next `draw_games` games to finish wins it, picked at random. */
+drawGames: number; 
+/** Length of a relaxed game: no turn clock; when it runs out, anyone settles it 50/50. */
+relaxedSlots: number | bigint;  };
 
 export function getSettingsEncoder(): FixedSizeEncoder<SettingsArgs> {
-    return getStructEncoder([['minStake', getU64Encoder()], ['maxStake', getU64Encoder()], ['gasDeposit', getU64Encoder()], ['feeRefund', getU64Encoder()], ['turnSlots', getU64Encoder()], ['abandonSlots', getU64Encoder()], ['drainFloorBps', getU16Encoder()], ['jackpotEvery', getU8Encoder()]]);
+    return getStructEncoder([['minStake', getU64Encoder()], ['maxStake', getU64Encoder()], ['gasDeposit', getU64Encoder()], ['feeRefund', getU64Encoder()], ['turnSlots', getU64Encoder()], ['abandonSlots', getU64Encoder()], ['drainFloorBps', getU16Encoder()], ['rakeBps', getU16Encoder()], ['drawThreshold', getU64Encoder()], ['drawGames', getU8Encoder()], ['relaxedSlots', getU64Encoder()]]);
 }
 
 export function getSettingsDecoder(): FixedSizeDecoder<Settings> {
-    return getStructDecoder([['minStake', getU64Decoder()], ['maxStake', getU64Decoder()], ['gasDeposit', getU64Decoder()], ['feeRefund', getU64Decoder()], ['turnSlots', getU64Decoder()], ['abandonSlots', getU64Decoder()], ['drainFloorBps', getU16Decoder()], ['jackpotEvery', getU8Decoder()]]);
+    return getStructDecoder([['minStake', getU64Decoder()], ['maxStake', getU64Decoder()], ['gasDeposit', getU64Decoder()], ['feeRefund', getU64Decoder()], ['turnSlots', getU64Decoder()], ['abandonSlots', getU64Decoder()], ['drainFloorBps', getU16Decoder()], ['rakeBps', getU16Decoder()], ['drawThreshold', getU64Decoder()], ['drawGames', getU8Decoder()], ['relaxedSlots', getU64Decoder()]]);
 }
 
 export function getSettingsCodec(): FixedSizeCodec<SettingsArgs, Settings> {

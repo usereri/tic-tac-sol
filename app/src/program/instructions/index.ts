@@ -9,6 +9,7 @@
 export * from './claimTimeout';
 export * from './closeGame';
 export * from './initConfig';
+export * from './initLeaderboard';
 export * from './makeMove';
 export * from './settleAbandoned';
 export * from './startGame';

@@ -8,40 +8,40 @@
 
 import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, SolanaError, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { getAccountMetaFactory, getAddressFromResolvedInstructionAccount, getNonNullResolvedInstructionInput, type InstructionAccountInput, type InstructionAccountInputAddress, type InstructionSignerInput, type ResolvedInstructionAccount, type ResolvedInstructionAccountMeta } from '@solana/program-client-core';
-import { findActiveOPda, findActiveXPda, findConfigPda, findGamePda, findJackpotPda } from '../pdas';
+import { findActiveOPda, findActiveXPda, findConfigPda, findGamePda } from '../pdas';
 import { TIC_TAC_SOL_PROGRAM_ADDRESS } from '../programs';
+import { getGameModeDecoder, getGameModeEncoder, type GameMode, type GameModeArgs } from '../types';
 
 export const START_GAME_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([249, 47, 252, 172, 184, 162, 245, 14]);
 
 export function getStartGameDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(START_GAME_DISCRIMINATOR); }
 
-export type StartGameInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountPlayerX extends string | AccountMeta<string> = string, TAccountPlayerO extends string | AccountMeta<string> = string, TAccountSessionX extends string | AccountMeta<string> = string, TAccountSessionO extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountJackpot extends string | AccountMeta<string> = string, TAccountGame extends string | AccountMeta<string> = string, TAccountActiveX extends string | AccountMeta<string> = string, TAccountActiveO extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountPlayerX extends string ? WritableSignerAccount<TAccountPlayerX> & AccountSignerMeta<TAccountPlayerX> : TAccountPlayerX, TAccountPlayerO extends string ? WritableSignerAccount<TAccountPlayerO> & AccountSignerMeta<TAccountPlayerO> : TAccountPlayerO, TAccountSessionX extends string ? WritableAccount<TAccountSessionX> : TAccountSessionX, TAccountSessionO extends string ? WritableAccount<TAccountSessionO> : TAccountSessionO, TAccountConfig extends string ? ReadonlyAccount<TAccountConfig> : TAccountConfig, TAccountJackpot extends string ? WritableAccount<TAccountJackpot> : TAccountJackpot, TAccountGame extends string ? WritableAccount<TAccountGame> : TAccountGame, TAccountActiveX extends string ? WritableAccount<TAccountActiveX> : TAccountActiveX, TAccountActiveO extends string ? WritableAccount<TAccountActiveO> : TAccountActiveO, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
+export type StartGameInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountPlayerX extends string | AccountMeta<string> = string, TAccountPlayerO extends string | AccountMeta<string> = string, TAccountSessionX extends string | AccountMeta<string> = string, TAccountSessionO extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountGame extends string | AccountMeta<string> = string, TAccountActiveX extends string | AccountMeta<string> = string, TAccountActiveO extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountPlayerX extends string ? WritableSignerAccount<TAccountPlayerX> & AccountSignerMeta<TAccountPlayerX> : TAccountPlayerX, TAccountPlayerO extends string ? WritableSignerAccount<TAccountPlayerO> & AccountSignerMeta<TAccountPlayerO> : TAccountPlayerO, TAccountSessionX extends string ? WritableAccount<TAccountSessionX> : TAccountSessionX, TAccountSessionO extends string ? WritableAccount<TAccountSessionO> : TAccountSessionO, TAccountConfig extends string ? ReadonlyAccount<TAccountConfig> : TAccountConfig, TAccountGame extends string ? WritableAccount<TAccountGame> : TAccountGame, TAccountActiveX extends string ? WritableAccount<TAccountActiveX> : TAccountActiveX, TAccountActiveO extends string ? WritableAccount<TAccountActiveO> : TAccountActiveO, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type StartGameInstructionData = { discriminator: ReadonlyUint8Array; nonce: bigint; stake: bigint;  };
+export type StartGameInstructionData = { discriminator: ReadonlyUint8Array; nonce: bigint; stake: bigint; mode: GameMode;  };
 
-export type StartGameInstructionDataArgs = { nonce: number | bigint; stake: number | bigint;  };
+export type StartGameInstructionDataArgs = { nonce: number | bigint; stake: number | bigint; mode: GameModeArgs;  };
 
 export function getStartGameInstructionDataEncoder(): FixedSizeEncoder<StartGameInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['nonce', getU64Encoder()], ['stake', getU64Encoder()]]), (value) => ({ ...value, discriminator: START_GAME_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['nonce', getU64Encoder()], ['stake', getU64Encoder()], ['mode', getGameModeEncoder()]]), (value) => ({ ...value, discriminator: START_GAME_DISCRIMINATOR }));
 }
 
 export function getStartGameInstructionDataDecoder(): FixedSizeDecoder<StartGameInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['nonce', getU64Decoder()], ['stake', getU64Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['nonce', getU64Decoder()], ['stake', getU64Decoder()], ['mode', getGameModeDecoder()]]);
 }
 
 export function getStartGameInstructionDataCodec(): FixedSizeCodec<StartGameInstructionDataArgs, StartGameInstructionData> {
     return combineCodec(getStartGameInstructionDataEncoder(), getStartGameInstructionDataDecoder());
 }
 
-export type StartGameAsyncInput<TAccountPlayerX extends InstructionSignerInput = InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput = InstructionSignerInput, TAccountSessionX extends InstructionAccountInput = InstructionAccountInput, TAccountSessionO extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type StartGameAsyncInput<TAccountPlayerX extends InstructionSignerInput = InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput = InstructionSignerInput, TAccountSessionX extends InstructionAccountInput = InstructionAccountInput, TAccountSessionO extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   /** Moves first; pays the tx fee and the game account's rent (returned by `close_game`). */
 playerX: TAccountPlayerX;
 playerO: TAccountPlayerO;
 sessionX: TAccountSessionX;
 sessionO: TAccountSessionO;
 config?: TAccountConfig;
-jackpot?: TAccountJackpot;
 game?: TAccountGame;
 /** One-game locks. Each player pays their own (small) rent and gets it back when the game ends. */
 activeX?: TAccountActiveX;
@@ -49,9 +49,10 @@ activeO?: TAccountActiveO;
 systemProgram?: TAccountSystemProgram;
 nonce: StartGameInstructionDataArgs["nonce"];
 stake: StartGameInstructionDataArgs["stake"];
+mode: StartGameInstructionDataArgs["mode"];
 }
 
-export async function getStartGameInstructionAsync<TAccountPlayerX extends InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput, TAccountSessionX extends InstructionAccountInput, TAccountSessionO extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountGame extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: StartGameAsyncInput<TAccountPlayerX, TAccountPlayerO, TAccountSessionX, TAccountSessionO, TAccountConfig, TAccountJackpot, TAccountGame, TAccountActiveX, TAccountActiveO, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>> {
+export async function getStartGameInstructionAsync<TAccountPlayerX extends InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput, TAccountSessionX extends InstructionAccountInput, TAccountSessionO extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountGame extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: StartGameAsyncInput<TAccountPlayerX, TAccountPlayerO, TAccountSessionX, TAccountSessionO, TAccountConfig, TAccountGame, TAccountActiveX, TAccountActiveO, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): Promise<StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -60,7 +61,7 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { playerX: { value: input.playerX ?? null, isSigner: true, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: true, isWritable: true }, sessionX: { value: input.sessionX ?? null, isSigner: false, isWritable: true }, sessionO: { value: input.sessionO ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { playerX: { value: input.playerX ?? null, isSigner: true, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: true, isWritable: true }, sessionX: { value: input.sessionX ?? null, isSigner: false, isWritable: true }, sessionO: { value: input.sessionO ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -71,9 +72,6 @@ const args = { ...input,  };
 // Resolve default values.
 if (!accounts.config.value) {
 accounts.config.value = await findConfigPda({ programAddress });
-}
-if (!accounts.jackpot.value) {
-accounts.jackpot.value = await findJackpotPda({ programAddress });
 }
 if (!accounts.game.value) {
 accounts.game.value = await findGamePda({ playerX: getAddressFromResolvedInstructionAccount("playerX", accounts.playerX.value), nonce: getNonNullResolvedInstructionInput("nonce", args.nonce) }, { programAddress });
@@ -88,17 +86,16 @@ if (!accounts.systemProgram.value) {
 accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("sessionX", accounts.sessionX), getAccountMeta("sessionO", accounts.sessionO), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("game", accounts.game), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("systemProgram", accounts.systemProgram)], data: getStartGameInstructionDataEncoder().encode(args as StartGameInstructionDataArgs), programAddress } as StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("sessionX", accounts.sessionX), getAccountMeta("sessionO", accounts.sessionO), getAccountMeta("config", accounts.config), getAccountMeta("game", accounts.game), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("systemProgram", accounts.systemProgram)], data: getStartGameInstructionDataEncoder().encode(args as StartGameInstructionDataArgs), programAddress } as StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
 }
 
-export type StartGameInput<TAccountPlayerX extends InstructionSignerInput = InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput = InstructionSignerInput, TAccountSessionX extends InstructionAccountInput = InstructionAccountInput, TAccountSessionO extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountJackpot extends InstructionAccountInput = InstructionAccountInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
+export type StartGameInput<TAccountPlayerX extends InstructionSignerInput = InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput = InstructionSignerInput, TAccountSessionX extends InstructionAccountInput = InstructionAccountInput, TAccountSessionO extends InstructionAccountInput = InstructionAccountInput, TAccountConfig extends InstructionAccountInput = InstructionAccountInput, TAccountGame extends InstructionAccountInput = InstructionAccountInput, TAccountActiveX extends InstructionAccountInput = InstructionAccountInput, TAccountActiveO extends InstructionAccountInput = InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput> =  {
   /** Moves first; pays the tx fee and the game account's rent (returned by `close_game`). */
 playerX: TAccountPlayerX;
 playerO: TAccountPlayerO;
 sessionX: TAccountSessionX;
 sessionO: TAccountSessionO;
 config: TAccountConfig;
-jackpot: TAccountJackpot;
 game: TAccountGame;
 /** One-game locks. Each player pays their own (small) rent and gets it back when the game ends. */
 activeX: TAccountActiveX;
@@ -106,9 +103,10 @@ activeO: TAccountActiveO;
 systemProgram?: TAccountSystemProgram;
 nonce: StartGameInstructionDataArgs["nonce"];
 stake: StartGameInstructionDataArgs["stake"];
+mode: StartGameInstructionDataArgs["mode"];
 }
 
-export function getStartGameInstruction<TAccountPlayerX extends InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput, TAccountSessionX extends InstructionAccountInput, TAccountSessionO extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountJackpot extends InstructionAccountInput, TAccountGame extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: StartGameInput<TAccountPlayerX, TAccountPlayerO, TAccountSessionX, TAccountSessionO, TAccountConfig, TAccountJackpot, TAccountGame, TAccountActiveX, TAccountActiveO, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>> {
+export function getStartGameInstruction<TAccountPlayerX extends InstructionSignerInput, TAccountPlayerO extends InstructionSignerInput, TAccountSessionX extends InstructionAccountInput, TAccountSessionO extends InstructionAccountInput, TAccountConfig extends InstructionAccountInput, TAccountGame extends InstructionAccountInput, TAccountActiveX extends InstructionAccountInput, TAccountActiveO extends InstructionAccountInput, TAccountSystemProgram extends InstructionAccountInput, TProgramAddress extends Address = typeof TIC_TAC_SOL_PROGRAM_ADDRESS>(input: StartGameInput<TAccountPlayerX, TAccountPlayerO, TAccountSessionX, TAccountSessionO, TAccountConfig, TAccountGame, TAccountActiveX, TAccountActiveO, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } } ): StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>> {
   // Program address.
 const programAddressInput = config?.programAddress ?? TIC_TAC_SOL_PROGRAM_ADDRESS;
 const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
@@ -117,7 +115,7 @@ const programAddress = typeof programAddressInput === 'string' ? programAddressI
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
 
  // Original accounts.
-const originalAccounts = { playerX: { value: input.playerX ?? null, isSigner: true, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: true, isWritable: true }, sessionX: { value: input.sessionX ?? null, isSigner: false, isWritable: true }, sessionO: { value: input.sessionO ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, jackpot: { value: input.jackpot ?? null, isSigner: false, isWritable: true }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
+const originalAccounts = { playerX: { value: input.playerX ?? null, isSigner: true, isWritable: true }, playerO: { value: input.playerO ?? null, isSigner: true, isWritable: true }, sessionX: { value: input.sessionX ?? null, isSigner: false, isWritable: true }, sessionO: { value: input.sessionO ?? null, isSigner: false, isWritable: true }, config: { value: input.config ?? null, isSigner: false, isWritable: false }, game: { value: input.game ?? null, isSigner: false, isWritable: true }, activeX: { value: input.activeX ?? null, isSigner: false, isWritable: true }, activeO: { value: input.activeO ?? null, isSigner: false, isWritable: true }, systemProgram: { value: input.systemProgram ?? null, isSigner: false, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
 
@@ -130,7 +128,7 @@ if (!accounts.systemProgram.value) {
 accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
 }
 
-return Object.freeze({ accounts: [getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("sessionX", accounts.sessionX), getAccountMeta("sessionO", accounts.sessionO), getAccountMeta("config", accounts.config), getAccountMeta("jackpot", accounts.jackpot), getAccountMeta("game", accounts.game), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("systemProgram", accounts.systemProgram)], data: getStartGameInstructionDataEncoder().encode(args as StartGameInstructionDataArgs), programAddress } as StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountJackpot, InstructionAccountInputAddress<TAccountJackpot>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
+return Object.freeze({ accounts: [getAccountMeta("playerX", accounts.playerX), getAccountMeta("playerO", accounts.playerO), getAccountMeta("sessionX", accounts.sessionX), getAccountMeta("sessionO", accounts.sessionO), getAccountMeta("config", accounts.config), getAccountMeta("game", accounts.game), getAccountMeta("activeX", accounts.activeX), getAccountMeta("activeO", accounts.activeO), getAccountMeta("systemProgram", accounts.systemProgram)], data: getStartGameInstructionDataEncoder().encode(args as StartGameInstructionDataArgs), programAddress } as StartGameInstruction<TProgramAddress, ResolvedInstructionAccountMeta<TAccountPlayerX, InstructionAccountInputAddress<TAccountPlayerX>>, ResolvedInstructionAccountMeta<TAccountPlayerO, InstructionAccountInputAddress<TAccountPlayerO>>, ResolvedInstructionAccountMeta<TAccountSessionX, InstructionAccountInputAddress<TAccountSessionX>>, ResolvedInstructionAccountMeta<TAccountSessionO, InstructionAccountInputAddress<TAccountSessionO>>, ResolvedInstructionAccountMeta<TAccountConfig, InstructionAccountInputAddress<TAccountConfig>>, ResolvedInstructionAccountMeta<TAccountGame, InstructionAccountInputAddress<TAccountGame>>, ResolvedInstructionAccountMeta<TAccountActiveX, InstructionAccountInputAddress<TAccountActiveX>>, ResolvedInstructionAccountMeta<TAccountActiveO, InstructionAccountInputAddress<TAccountActiveO>>, ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>>);
 }
 
 export type ParsedStartGameInstruction<TProgram extends string = typeof TIC_TAC_SOL_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -141,18 +139,17 @@ playerO: TAccountMetas[1];
 sessionX: TAccountMetas[2];
 sessionO: TAccountMetas[3];
 config: TAccountMetas[4];
-jackpot: TAccountMetas[5];
-game: TAccountMetas[6];
+game: TAccountMetas[5];
 /** One-game locks. Each player pays their own (small) rent and gets it back when the game ends. */
-activeX: TAccountMetas[7];
-activeO: TAccountMetas[8];
-systemProgram: TAccountMetas[9];
+activeX: TAccountMetas[6];
+activeO: TAccountMetas[7];
+systemProgram: TAccountMetas[8];
 };
 data: StartGameInstructionData; };
 
 export function parseStartGameInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>): ParsedStartGameInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
-  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 10 });
+  if (instruction.accounts.length < 9) {
+  throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, { actualAccountMetas: instruction.accounts.length, expectedAccountMetas: 9 });
 }
 let accountIndex = 0;
 const getNextAccount = () => {
@@ -160,5 +157,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { playerX: getNextAccount(), playerO: getNextAccount(), sessionX: getNextAccount(), sessionO: getNextAccount(), config: getNextAccount(), jackpot: getNextAccount(), game: getNextAccount(), activeX: getNextAccount(), activeO: getNextAccount(), systemProgram: getNextAccount() }, data: getStartGameInstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { playerX: getNextAccount(), playerO: getNextAccount(), sessionX: getNextAccount(), sessionO: getNextAccount(), config: getNextAccount(), game: getNextAccount(), activeX: getNextAccount(), activeO: getNextAccount(), systemProgram: getNextAccount() }, data: getStartGameInstructionDataDecoder().decode(instruction.data) };
 }

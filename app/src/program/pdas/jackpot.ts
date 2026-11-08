@@ -11,5 +11,5 @@ import { getBytesEncoder, getProgramDerivedAddress, type Address, type HasAddres
 export async function findJackpotPda(config: { programAddress?: Address | HasAddress | undefined } = {}): Promise<ProgramDerivedAddress> {
   const { programAddress: programAddressInput = '9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5' as Address<'9CpwbHKTVd4ADSrtL9uhPnroVBKLddKLAcbvCWW8ZgF5'> } = config;
   const programAddress = typeof programAddressInput === 'string' ? programAddressInput : programAddressInput.address;
-  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([106, 97, 99, 107, 112, 111, 116]))]});
+  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([106, 97, 99, 107, 112, 111, 116, 95, 118, 50]))]});
 }

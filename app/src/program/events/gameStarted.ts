@@ -7,23 +7,24 @@
  */
 
 import { combineCodec, containsBytes, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBytesEncoder, getConstantDecoder, getConstantEncoder, getHiddenPrefixDecoder, getHiddenPrefixEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type HasAddress, type ReadonlyUint8Array } from '@solana/kit';
+import { getGameModeDecoder, getGameModeEncoder, type GameMode, type GameModeArgs } from '../types';
 
 export const GAME_STARTED_EVENT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([222, 247, 78, 255, 61, 184, 156, 41]);
 
 export function getGameStartedEventDiscriminatorBytes(): ReadonlyUint8Array { return fixEncoderSize(getBytesEncoder(), 8).encode(GAME_STARTED_EVENT_DISCRIMINATOR); }
 
-export type GameStartedEvent = { game: Address; playerX: Address; playerO: Address; pot: bigint; jackpotBonus: bigint;  };
+export type GameStartedEvent = { game: Address; playerX: Address; playerO: Address; pot: bigint; mode: GameMode;  };
 
-export type GameStartedEventArgs = { game: Address | HasAddress; playerX: Address | HasAddress; playerO: Address | HasAddress; pot: number | bigint; jackpotBonus: number | bigint;  };
+export type GameStartedEventArgs = { game: Address | HasAddress; playerX: Address | HasAddress; playerO: Address | HasAddress; pot: number | bigint; mode: GameModeArgs;  };
 
 /** Gets the encoder for {@link GameStartedEventArgs} event data. */
 export function getGameStartedEventEncoder(): FixedSizeEncoder<GameStartedEventArgs> {
-    return getHiddenPrefixEncoder(getStructEncoder([['game', getAddressEncoder()], ['playerX', getAddressEncoder()], ['playerO', getAddressEncoder()], ['pot', getU64Encoder()], ['jackpotBonus', getU64Encoder()]]), [getConstantEncoder(GAME_STARTED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixEncoder(getStructEncoder([['game', getAddressEncoder()], ['playerX', getAddressEncoder()], ['playerO', getAddressEncoder()], ['pot', getU64Encoder()], ['mode', getGameModeEncoder()]]), [getConstantEncoder(GAME_STARTED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the decoder for {@link GameStartedEvent} event data. */
 export function getGameStartedEventDecoder(): FixedSizeDecoder<GameStartedEvent> {
-    return getHiddenPrefixDecoder(getStructDecoder([['game', getAddressDecoder()], ['playerX', getAddressDecoder()], ['playerO', getAddressDecoder()], ['pot', getU64Decoder()], ['jackpotBonus', getU64Decoder()]]), [getConstantDecoder(GAME_STARTED_EVENT_DISCRIMINATOR)]);
+    return getHiddenPrefixDecoder(getStructDecoder([['game', getAddressDecoder()], ['playerX', getAddressDecoder()], ['playerO', getAddressDecoder()], ['pot', getU64Decoder()], ['mode', getGameModeDecoder()]]), [getConstantDecoder(GAME_STARTED_EVENT_DISCRIMINATOR)]);
 }
 
 /** Gets the codec for {@link GameStartedEvent} event data. */
