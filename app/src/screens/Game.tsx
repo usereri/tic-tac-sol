@@ -4,30 +4,41 @@ import { Board, Mark } from '../components/Board'
 import { Alert, Nav } from '../components/Chrome'
 import { COORDS, short, sol } from '../lib/format'
 import {
+  abandonedAfter,
   canPlace,
   claimTimeout,
   settleAbandoned,
   closeGame,
+  GameMode,
   GameStatus,
   makeMove,
   nextToFade,
   O,
   payouts,
   sweepSession,
-  turnWindow,
+  turnDeadline,
   useConfig,
   useGame,
   useSlot,
+  useTabLock,
   winningLine,
   X,
   type Game as GameState,
 } from '../lib/game'
 import { loadSession, type Session } from '../lib/session'
-import { allowedStakes, playHref, saveStake } from '../lib/stakes'
+import { allowedStakes, playHref, saveStake, type Mode } from '../lib/stakes'
 import { describeError, explorerTx, SLOT_MS } from '../lib/solana'
 import { useWallet } from '../lib/wallet'
 
 type LogEntry = { n: number; player: number; cell: number; ms?: number; signature?: string }
+
+/**
+ * The board locks this many slots (~2 s) before the real deadline and the clock counts down to
+ * that point, so a move sent at "0.1 s" still has time to land.
+ */
+const MARGIN_SLOTS = 5
+
+const DEFAULT_TIMING = { turnSlots: 30n, relaxedSlots: 450n, abandonSlots: 150n }
 
 function parseAddress(raw: string): Address | null {
   try {
@@ -43,6 +54,7 @@ export function GameScreen({ id }: { id: string }) {
   const slot = useSlot()
   const { config } = useConfig()
   const { wallet } = useWallet()
+  const tab = useTabLock(gameAddress && wallet ? `ttsol:game:${gameAddress}:${wallet.address}` : null)
   const [session, setSession] = useState<Session | null>(null)
   const [pending, setPending] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -57,7 +69,8 @@ export function GameScreen({ id }: { id: string }) {
   }, [gameAddress, wallet])
 
   const game = view?.game ?? null
-  const me = !game || !session ? 0 : session.signer.address === game.sessionX ? X : session.signer.address === game.sessionO ? O : 0
+  // Only the tab in charge of this game plays it; others watch until they take over.
+  const me = !game || !session || tab.state !== 'mine' ? 0 : session.signer.address === game.sessionX ? X : session.signer.address === game.sessionO ? O : 0
   const active = game?.status === GameStatus.Active
   const myTurn = active && me !== 0 && game!.turn === me
 
@@ -76,17 +89,20 @@ export function GameScreen({ id }: { id: string }) {
     setPending(null)
   }, [game])
 
-  const turnSlots = game ? turnWindow(game, config?.turnSlots ?? 30n) : (config?.turnSlots ?? 30n)
-  const deadline = game ? game.lastActionSlot + turnSlots : 0n
-  const slotsLeft = game && slot !== null ? Number(deadline - slot) : Number(turnSlots)
-  const secondsLeft = Math.max(0, (slotsLeft * SLOT_MS) / 1000)
-  // Lock the board 2 slots early so a last-moment move doesn't land after the deadline.
-  const locked = slotsLeft < 2
+  const timing = config ?? DEFAULT_TIMING
+  const relaxed = game?.mode === GameMode.Relaxed
+  const { deadline, window } = game ? turnDeadline(game, timing) : { deadline: 0n, window: timing.turnSlots }
+  const slotsLeft = game && slot !== null ? Number(deadline - slot) : Number(window)
+  // What the player sees: time until the board locks, MARGIN_SLOTS before the real deadline.
+  const shownSlots = Math.max(0, slotsLeft - MARGIN_SLOTS)
+  const shownWindow = Math.max(1, Number(window) - MARGIN_SLOTS)
+  const secondsLeft = (shownSlots * SLOT_MS) / 1000
+  const locked = shownSlots <= 0
 
   // Opponent missed the deadline: claim it (wins if they had moved before, else 50/50).
-  // Past the claim window (both players were gone) either player settles it 50/50, which also
-  // frees both wallets' one-game locks.
-  const abandoned = slotsLeft < -Number(config?.abandonSlots ?? 150n)
+  // Past the claim window (both players were gone), or once a relaxed game ran out, either
+  // player settles it 50/50, which also frees both wallets' one-game locks.
+  const abandoned = game !== null && slot !== null && slot > abandonedAfter(game, timing)
   useEffect(() => {
     if (!game || !session || !gameAddress || !active || me === 0) return
     if (slotsLeft >= 0 || claiming.current) return
@@ -136,14 +152,24 @@ export function GameScreen({ id }: { id: string }) {
 
   const fading = myTurn ? nextToFade(game, me) : nextToFade(game, game.turn)
   const opp = me === X ? O : X
+  const ownGame = session && (session.signer.address === game.sessionX || session.signer.address === game.sessionO)
+  const clock = relaxed
+    ? `${Math.floor(secondsLeft / 60)}:${String(Math.floor(secondsLeft % 60)).padStart(2, '0')}`
+    : `${secondsLeft.toFixed(1)} s`
 
   return (
     <div className="flex min-h-svh flex-col">
-      <Nav meta={<><span>Game {short(gameAddress)}</span><span>Move {String(game.moveCount + 1).padStart(2, '0')}</span></>} />
+      <Nav meta={<><span>Game {short(gameAddress)}</span><span>{relaxed ? 'Relaxed · 3 min' : 'Timed'}</span><span>Move {String(game.moveCount + 1).padStart(2, '0')}</span></>} />
+      {ownGame && tab.state === 'taken' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-[3px] border-ink bg-signal px-4 py-2 font-bold">
+          <span>This game is open in another tab. Play it there, or move it here.</span>
+          <button type="button" className="ghost w-auto min-h-[40px] px-4" onClick={tab.takeOver}>Play here</button>
+        </div>
+      )}
       <main className="grid flex-1 grid-cols-1 items-start gap-5 px-4 py-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)_minmax(0,320px)] lg:gap-8 lg:px-8 lg:py-5">
         <section className="flex flex-col gap-4 lg:gap-5">
           <div className="panel">
-            <header><span className="label">Players</span><span className="code">X moves first</span></header>
+            <header><span className="label">Players</span><span className="code">{me ? `You are ${me === X ? 'X' : 'O'}` : 'X moves first'}</span></header>
             <div className="body">
               {[X, O].map((p) => (
                 <div key={p} className="grid grid-cols-[36px_1fr] items-center gap-3">
@@ -164,20 +190,27 @@ export function GameScreen({ id }: { id: string }) {
               <div className="body"><div className="num text-[26px] lg:text-[40px]">{sol(game.initialPot - game.feesPaid, 5)}</div><span className="label">SOL · started at {sol(game.initialPot, 5)}</span></div>
             </div>
             <div className="panel">
-              <header><span className="label">Time left</span><span className="code hidden sm:inline">slot {Math.max(0, Number(turnSlots) - slotsLeft)} / {String(turnSlots)}</span></header>
+              <header><span className="label">{relaxed ? 'Game time left' : 'Time left'}</span><span className="code hidden sm:inline">{relaxed ? 'no turn clock' : `slot ${shownWindow - shownSlots} / ${shownWindow}`}</span></header>
               <div className="body">
-                <div className="num text-[26px] lg:text-[40px]">{secondsLeft.toFixed(1)} s</div>
-                <div className={`timer ${secondsLeft < 2 ? 'urgent' : ''}`}><span style={{ width: `${Math.min(100, (slotsLeft / Number(turnSlots)) * 100)}%` }} /></div>
+                <div className="num text-[26px] lg:text-[40px]">{clock}</div>
+                <div className={`timer ${secondsLeft < (relaxed ? 15 : 2) ? 'urgent' : ''}`}><span style={{ width: `${Math.min(100, (shownSlots / shownWindow) * 100)}%` }} /></div>
               </div>
             </div>
           </div>
         </section>
 
         <section className="flex flex-col items-center gap-3">
+          {me !== 0 && (
+            <div className="flex w-full max-w-[680px] items-center justify-center gap-2 text-[13px] font-bold uppercase tracking-[0.08em]">
+              <span className="size-6"><Mark player={me} /></span>
+              <span>You play {me === X ? 'X' : 'O'}{me === X ? ' · you move first' : ''}</span>
+            </div>
+          )}
           <Board
             className="w-full max-w-[min(680px,calc(100svh-190px))]"
             board={game.board}
             fading={fading}
+            leaving={pending !== null ? fading : null}
             pending={pending !== null ? { cell: pending, player: me } : null}
             canPlay={(c) => myTurn && !locked && pending === null && canPlace(game, c)}
             onPlay={play}
@@ -189,7 +222,9 @@ export function GameScreen({ id }: { id: string }) {
                 ? 'Spectating.'
                 : myTurn
                   ? fading !== null ? `Your oldest mark at ${COORDS[fading]} disappears when you place.` : 'Your move.'
-                  : `Waiting for ${opp === X ? 'X' : 'O'}…`}
+                  : locked && !relaxed
+                    ? `${opp === X ? 'X' : 'O'} is out of time.`
+                    : `Waiting for ${opp === X ? 'X' : 'O'}…`}
           </div>
         </section>
 
@@ -253,10 +288,12 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
       <main className="grid flex-1 grid-cols-1 items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-12 lg:px-12 lg:py-8">
         <Board className="w-full max-w-[min(460px,calc(100svh-180px))]" board={game.board} win={line} coords />
         <section className="flex min-w-0 flex-col gap-5">
-          <span className="label">{OUTCOME[game.status]} · move {String(moves).padStart(2, '0')}</span>
+          <span className="label">{game.status === GameStatus.Split && game.mode === GameMode.Relaxed ? 'Time ran out · split 50/50' : OUTCOME[game.status]} · move {String(moves).padStart(2, '0')}</span>
+          {pay.jackpotWon > 0n && <span className="chip chip-ink self-start text-[13px]">Jackpot draw · this game won {sol(pay.jackpotWon, 4)} SOL</span>}
           <h1 className="mega text-[clamp(50px,8vw,120px)]">{headline}</h1>
           {me !== 0 && (
             <div>
+              <span className="label">You played {me === X ? 'X' : 'O'} · </span>
               <span className="label">{mineAmount > 0n ? `Sent to ${walletAddress ? short(walletAddress) : 'your wallet'}` : 'You'}</span>
               <div className="num text-[clamp(30px,5vw,72px)]">{mineAmount > 0n ? `+${sol(mineAmount, 6)} SOL` : 'Better luck next time.'}</div>
             </div>
@@ -266,18 +303,20 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
             <div className="body"><div className="kv">
               <span>Pot at start</span><span>{sol(game.initialPot, 6)} SOL</span>
               <span>Fees paid to Solana · {moves} moves</span><span>−{sol(game.feesPaid, 6)} SOL</span>
+              {pay.jackpot > 0n && <><span>To the jackpot</span><span>−{sol(pay.jackpot, 6)} SOL</span></>}
+              {pay.jackpotWon > 0n && <><span>Jackpot draw won</span><span>+{sol(pay.jackpotWon, 6)} SOL</span></>}
               <span>Paid to X</span><span>{sol(pay.x, 6)} SOL</span>
               <span>Paid to O</span><span>{sol(pay.o, 6)} SOL</span>
-              {pay.jackpot > 0n && <><span>To the jackpot</span><span>{sol(pay.jackpot, 6)} SOL</span></>}
               <span>Gas deposit</span><span>returned to wallets</span>
             </div></div>
           </div>
           <span className="label">The whole game cost {sol(game.feesPaid, 6)} SOL in fees.</span>
-          <div className="grid items-end gap-4 sm:grid-cols-2">
-            <PlayAgain stake={game.stake} />
+          <PlayAgain stake={game.stake} mode={game.mode === GameMode.Relaxed ? 'relaxed' : 'timed'} />
+          <div className="grid grid-cols-2 gap-4">
+            <a className="ghost" href="#/">Home</a>
             {log[0]?.signature
-              ? <a className="ghost min-h-[68px]" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Last move on Explorer ↗</a>
-              : <a className="ghost min-h-[68px]" href="#/">Home</a>}
+              ? <a className="ghost" href={explorerTx(log[0].signature)} target="_blank" rel="noreferrer">Explorer ↗</a>
+              : <a className="ghost" href="#/leaderboard">Leaderboard</a>}
           </div>
         </section>
       </main>
@@ -286,7 +325,7 @@ function Result({ game, me, walletAddress, log }: { game: GameState; me: number;
 }
 
 /** Play again, optionally at a different stake (e.g. step down after a big game). */
-function PlayAgain({ stake }: { stake: bigint }) {
+function PlayAgain({ stake, mode }: { stake: bigint; mode: Mode }) {
   const { config } = useConfig()
   const [next, setNext] = useState(stake)
   return (
@@ -299,7 +338,7 @@ function PlayAgain({ stake }: { stake: bigint }) {
           </button>
         ))}
       </div>
-      <a className="btn" href={playHref(next)}><span>Play again</span><span className="tag">{sol(next, 2)} SOL</span></a>
+      <a className="btn" href={playHref(next, mode)}><span>Play again{mode === 'relaxed' ? ' · relaxed' : ''}</span><span className="tag">{sol(next, 2)} SOL</span></a>
     </div>
   )
 }

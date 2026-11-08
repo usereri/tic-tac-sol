@@ -48,7 +48,7 @@ export function Board({ board, fading, leaving, win, banner, pending, coords = t
         const classes = [
           'cell',
           playable && 'playable',
-          fading === i && 'fading',
+          fading === i && leaving !== i && 'fading',
           leaving === i && 'leaving',
           win?.includes(i) && 'win',
           pending?.cell === i && 'pending',

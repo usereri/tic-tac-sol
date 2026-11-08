@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { DemoBoard } from '../components/DemoBoard'
 import { Alert, Nav, Ticker } from '../components/Chrome'
-import { sol } from '../lib/format'
-import { useConfig, useJackpot } from '../lib/game'
-import { matchmaker, type Peer } from '../lib/matchmaking'
-import { allowedStakes, playHref, savedStake, saveStake } from '../lib/stakes'
+import { short, sol } from '../lib/format'
+import { activeGameOf, useConfig, useJackpot } from '../lib/game'
+import { lineOf, matchmaker, type Peer } from '../lib/matchmaking'
+import { allowedStakes, MODE_LABEL, playHref, savedMode, saveMode, savedStake, saveStake, type Mode } from '../lib/stakes'
+import type { Address } from '@solana/kit'
 import { useWallet } from '../lib/wallet'
 
 /**
@@ -17,16 +18,33 @@ export function Home() {
   const { wallet } = useWallet()
   const [queue, setQueue] = useState<Peer[]>([])
   const [stake, setStake] = useState(savedStake)
+  const [mode, setMode] = useState<Mode>(savedMode)
+  const [unfinished, setUnfinished] = useState<Address | null>(null)
   const [demo, setDemo] = useState({ note: '#00 · new game', fees: '0.000000 SOL' })
 
   useEffect(() => matchmaker.onQueue(setQueue), [])
 
+  // A game this wallet left (closed tab, both players gone) keeps its stakes until someone opens
+  // it, which settles it. Point the player back to it.
+  useEffect(() => {
+    setUnfinished(null)
+    if (wallet) activeGameOf(wallet.address).then(setUnfinished, () => {})
+  }, [wallet])
+
   const choices = allowedStakes(config)
-  const waiting = queue.filter((p) => p.stake === stake.toString()).length
+  const lineFor = (s: bigint) => queue.filter((p) => lineOf(p) === lineOf({ stake: s.toString(), mode })).length
+  const waiting = lineFor(stake)
+  const queuedElsewhere = wallet ? queue.find((p) => p.wallet === wallet.address) : undefined
   const pick = (s: bigint) => {
     setStake(s)
     saveStake(s)
   }
+  const pickMode = (m: Mode) => {
+    setMode(m)
+    saveMode(m)
+  }
+  const drawAt = config?.drawThreshold ?? 500_000_000n
+  const drawGames = config?.drawGames ?? 10
   const gas = config?.gasDeposit ?? 1_000_000n
 
   return (
@@ -40,7 +58,8 @@ export function Home() {
           </h1>
           <p className="hidden max-w-[640px] text-[clamp(13px,1.8svh,16px)] text-ink-2 sm:block">
             Pick your stake. Each player keeps three marks; place a fourth and your oldest disappears.
-            12 s per move, a little faster every 10 s, down to 5 s. The winner takes the pot.
+            Timed: 12 s per move, a little faster every 10 s, down to 5 s. Relaxed: no turn clock, 3 min for the game.
+            The winner takes the pot; 2% feeds the jackpot.
           </p>
 
           <div className="flex min-w-0 items-start gap-[clamp(12px,2svh,28px)]">
@@ -70,11 +89,19 @@ export function Home() {
           <div className="panel">
             <header><span className="label">Matchmaking · FIFO</span><span className="code">{waiting} waiting · pot {sol(stake * 2n, 2)}</span></header>
             <div className="body gap-3 py-3">
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Game mode">
+                {(['timed', 'relaxed'] as const).map((m) => (
+                  <button key={m} type="button" aria-pressed={m === mode} onClick={() => pickMode(m)}
+                    className={`border-[3px] border-ink px-1 py-1.5 text-[13px] font-bold uppercase tracking-[0.06em] ${m === mode ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
+                    {MODE_LABEL[m]}
+                  </button>
+                ))}
+              </div>
               <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
                 <legend className="label mb-2">Stake per player</legend>
                 <div className="grid grid-cols-4 gap-2">
                   {choices.map((s) => {
-                    const count = queue.filter((p) => p.stake === s.toString()).length
+                    const count = lineFor(s)
                     return (
                       <button key={String(s)} type="button" aria-pressed={s === stake} onClick={() => pick(s)}
                         className={`flex min-w-0 flex-col items-center border-[3px] border-ink px-1 py-1.5 font-bold ${s === stake ? 'bg-ink text-signal' : 'bg-panel hover:bg-signal'}`}>
@@ -91,15 +118,33 @@ export function Home() {
               </div>
             </div>
           </div>
-          <a className="btn min-h-[clamp(50px,7svh,68px)] text-[16px] sm:text-[20px]" href={playHref(stake)} aria-disabled={!wallet}>
-            <span>{wallet ? 'Enter queue' : 'Connect to play'}</span>
-            <span className="tag">{sol(stake, 2)} SOL</span>
-          </a>
+          {unfinished ? (
+            <a className="btn min-h-[clamp(50px,7svh,68px)] text-[16px] sm:text-[20px]" href={`#/game/${unfinished}`}>
+              <span>Resume your game</span>
+              <span className="tag">{short(unfinished)}</span>
+            </a>
+          ) : (
+            <a className="btn min-h-[clamp(50px,7svh,68px)] text-[16px] sm:text-[20px]" href={playHref(stake, mode)} aria-disabled={!wallet}>
+              <span>{wallet ? 'Enter queue' : 'Connect to play'}</span>
+              <span className="tag">{sol(stake, 2)} SOL</span>
+            </a>
+          )}
+          {unfinished && <Alert>This wallet still has a game in progress, and its stakes stay locked until it's settled. Open it: if time ran out, it settles right away.</Alert>}
+          {!unfinished && queuedElsewhere && (
+            <Alert>This wallet is already in the queue at {sol(BigInt(queuedElsewhere.stake), 2)} SOL ({MODE_LABEL[queuedElsewhere.mode ?? 'timed']}) in another tab or device. One queue at a time.</Alert>
+          )}
           {error && <Alert>{error}</Alert>}
           <div className="grid grid-cols-2 gap-3">
             <div className="panel">
-              <header><span className="label">Jackpot</span><span className="code">{jackpot?.drained ?? 0}/{config?.jackpotEvery ?? 10}</span></header>
-              <div className="body py-2"><div className="num text-[clamp(16px,2.6svh,26px)]">{sol(jackpot?.balance ?? 0n, 3)} SOL</div></div>
+              <header><span className="label">Jackpot</span><span className="code">{jackpot?.drawLeft ? 'draw on' : '2% / game'}</span></header>
+              <div className="body gap-1 py-2">
+                <div className="num text-[clamp(16px,2.6svh,26px)]">{sol(jackpot?.balance ?? 0n, 3)} SOL</div>
+                <span className="label normal-case tracking-normal">
+                  {jackpot?.drawLeft
+                    ? `One of the next ${jackpot.drawLeft} games wins it`
+                    : `Draw starts at ${sol(drawAt, 2)} SOL: one of the next ${drawGames} games wins it`}
+                </span>
+              </div>
             </div>
             <a className="ghost h-full" href="#/leaderboard">Leaderboard ↗</a>
           </div>

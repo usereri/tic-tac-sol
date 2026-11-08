@@ -70,7 +70,7 @@
   .cell.fading { background: repeating-linear-gradient(-45deg, var(--color-panel) 0 7px, var(--color-hatch) 7px 9px); }
   .cell.fading svg { opacity: 0.35; }
   .cell .fade-tag { position: absolute; bottom: 6px; left: 8px; right: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: var(--color-ink); color: var(--color-signal); padding: 2px 4px; text-align: center; }
-  .cell.leaving svg { animation: vanish 0.35s ease-in forwards; }
+  .cell.leaving svg { animation: vanish 0.16s ease-in forwards; }
   .cell.win { background: var(--color-signal); }
   .cell.pending svg { opacity: .55; }
   .mark-x { color: var(--color-ink); }

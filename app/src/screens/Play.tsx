@@ -7,14 +7,15 @@ import {
 import { Mark } from '../components/Board'
 import { Alert, Nav } from '../components/Chrome'
 import { sol, short } from '../lib/format'
-import { activeGameOf, useConfig } from '../lib/game'
-import { joinMessage, matchmaker, type Direct, type JoinProof, type Pairing, type Peer } from '../lib/matchmaking'
+import { activeGameOf, GameMode, useConfig } from '../lib/game'
+import { joinMessage, lineOf, matchmaker, type Direct, type JoinProof, type Pairing, type Peer } from '../lib/matchmaking'
 import { createSession, saveSession, type Session } from '../lib/session'
 import {
   buildPartiallySigned,
   CLUSTER,
   cosign,
   describeError,
+  isRejection,
   rpc,
   sendSigned,
   wireBase64,
@@ -23,6 +24,7 @@ import {
 import { signText, useWallet } from '../lib/wallet'
 import { findGamePda, getStartGameInstructionAsync } from '../program'
 import { checkOffer, type Offer } from '../lib/offer'
+import { MODE_LABEL, type Mode } from '../lib/stakes'
 
 const SIGN_WINDOW_MS = 30_000
 const WATCH_MS = 1500
@@ -35,7 +37,7 @@ function go(game: string) {
   location.hash = `#/game/${game}`
 }
 
-export function Play({ stake }: { stake: bigint }) {
+export function Play({ stake, mode }: { stake: bigint; mode: Mode }) {
   const { wallet } = useWallet()
   const { config } = useConfig()
   const [session, setSession] = useState<Session | null>(null)
@@ -52,6 +54,10 @@ export function Play({ stake }: { stake: bigint }) {
   /** Why we're not in the queue right now, if we aren't. */
   const [out, setOut] = useState<'joining' | 'sign' | 'away' | 'duplicate' | null>('joining')
   const [busyGame, setBusyGame] = useState<Address | null>(null)
+  /** Our wallet's older entry, from another tab or device, while it blocks this one. */
+  const [otherEntry, setOtherEntry] = useState<Peer | null>(null)
+  const gameMode = mode === 'relaxed' ? GameMode.Relaxed : GameMode.Timed
+  const line = lineOf({ stake: stake.toString(), mode })
 
   // Listeners subscribe once and read the latest state from here, so a message that
   // arrives right after pairing (before React re-renders) is not dropped.
@@ -86,15 +92,16 @@ export function Play({ stake }: { stake: bigint }) {
           wallet: wallet.address,
           session: session.signer.address,
           stake: stake.toString(),
+          mode,
           joinedAt: joinedAt.current,
           cluster: CLUSTER,
         })
         proof.current = { message, signature: await signText(wallet, message) }
       }
-      matchmaker.join({ wallet: wallet.address, session: session.signer, stake, joinedAt: joinedAt.current, proof: proof.current })
+      matchmaker.join({ wallet: wallet.address, session: session.signer, stake, mode, joinedAt: joinedAt.current, proof: proof.current })
       setOut(null)
     } catch (e) {
-      setError(describeError(e))
+      setError(isRejection(e) ? "You didn't sign the join message, so you're not in the queue." : describeError(e))
       setOut('sign')
     }
   }
@@ -114,7 +121,7 @@ export function Play({ stake }: { stake: bigint }) {
       matchmaker.leave()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallet, stake, inRange])
+  }, [wallet, stake, mode, inRange])
 
   // The same wallet already waits in another tab or on another device: only the oldest entry plays.
   useEffect(
@@ -122,12 +129,13 @@ export function Play({ stake }: { stake: bigint }) {
       matchmaker.onDuplicate((other) => {
         if (!other) return
         matchmaker.leave()
+        setOtherEntry(other)
         setOut('duplicate')
       }),
     [],
   )
 
-  useEffect(() => matchmaker.onQueue((peers) => setQueue(peers.filter((p) => p.stake === stake.toString()))), [stake])
+  useEffect(() => matchmaker.onQueue((peers) => setQueue(peers.filter((p) => lineOf(p) === line))), [line])
 
   useEffect(
     () =>
@@ -145,7 +153,7 @@ export function Play({ stake }: { stake: bigint }) {
    * After a failed match the player who did their part keeps their place. Whoever was supposed
    * to sign and didn't is taken out of the queue until they confirm they're back.
    */
-  const requeue = (reason: string, notify: boolean) => {
+  const requeue = (notify: boolean) => {
     const { pairing, phase } = live.current
     const stalled = (pairing?.role === 'x' && (phase === 'matched' || phase === 'signing')) || (pairing?.role === 'o' && phase === 'ready')
     if (pairing && notify) matchmaker.send(pairing.opponent, { type: 'cancel' })
@@ -157,10 +165,10 @@ export function Play({ stake }: { stake: bigint }) {
     if (stalled) {
       matchmaker.leave()
       setOut('away')
-      setError(`${reason} You didn't sign in time, so you're out of the queue.`)
+      setError("You didn't sign in time, so you're out of the queue.")
       return
     }
-    join().then(() => setError(`${reason} Back in the queue, same place.`))
+    join().then(() => setError("Opponent left the match. You're back in the queue, same place."))
   }
 
   useEffect(
@@ -179,7 +187,7 @@ export function Play({ stake }: { stake: bigint }) {
         } else if (msg.type === 'started') {
           go(msg.game)
         } else if (msg.type === 'cancel' && phase !== 'sending') {
-          requeue('Opponent left the match.', false)
+          requeue(false)
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,7 +201,7 @@ export function Play({ stake }: { stake: bigint }) {
     return () => clearInterval(t)
   }, [deadline])
   useEffect(() => {
-    if (deadline && now > deadline && phase !== 'sending') requeue('Signatures timed out.', true)
+    if (deadline && now > deadline && phase !== 'sending') requeue(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now])
 
@@ -227,6 +235,7 @@ export function Play({ stake }: { stake: bigint }) {
         sessionO: pairing.opponent.session as Address,
         nonce,
         stake,
+        mode: gameMode,
       })
       const tx = await buildPartiallySigned(wallet.signer, [ix])
       const [game] = await findGamePda({ playerX: wallet.address, nonce })
@@ -254,7 +263,7 @@ export function Play({ stake }: { stake: bigint }) {
     setPhase('sending')
     setError(null)
     try {
-      const tx = await checkOffer(offer, { wallet: wallet.signer, session: session.signer.address, opponent: pairing.opponent, stake })
+      const tx = await checkOffer(offer, { wallet: wallet.signer, session: session.signer.address, opponent: pairing.opponent, stake, mode: gameMode })
       const signed = await cosign(tx, wallet.signer)
       saveSession(offer.game, wallet.address, session)
       setWatch({ game: offer.game, lastValidBlockHeight: offer.lifetime.lastValidBlockHeight })
@@ -307,14 +316,14 @@ export function Play({ stake }: { stake: bigint }) {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <Nav meta={<><span>Queue · FIFO · {sol(stake, 2)} SOL</span><span>{out ? 'not queued' : `${count} waiting`}</span></>} />
+      <Nav meta={<><span>Queue · {MODE_LABEL[mode]} · {sol(stake, 2)} SOL</span><span>{out ? 'not queued' : `${count} waiting`}</span></>} />
       <main className="flex min-w-0 flex-1 flex-col gap-[clamp(12px,2.4svh,24px)] px-4 py-[clamp(12px,2.4svh,32px)] md:px-10">
         <span className="label">
           {pairing
             ? 'Paired first-in, first-out · nothing paid yet'
             : out
               ? 'Not in the queue yet · nothing paid'
-              : `Looking for an opponent at ${sol(stake, 2)} SOL · nothing paid yet`}
+              : `Looking for a ${mode} opponent at ${sol(stake, 2)} SOL · nothing paid yet`}
         </span>
         <h1 className="mega text-[clamp(32px,min(8vw,8svh),96px)]">
           {pairing
@@ -332,7 +341,7 @@ export function Play({ stake }: { stake: bigint }) {
           {opponent
             ? <Slab player={iAmX ? 2 : 1} who={`Opponent · ${iAmX ? 'O' : 'X'}`} address={opponent.wallet} note={`waited ${Math.max(0, Math.round((Date.now() - opponent.joinedAt) / 1000))} s`} />
             : out
-              ? <OutPanel out={out} onJoin={() => join(out === 'away')} />
+              ? <OutPanel out={out} other={otherEntry} onJoin={() => join(out === 'away')} />
               : <div className="panel"><header><span className="label">Opponent</span><span className="code">{count <= 1 ? 'nobody else yet' : `${count} in queue`}</span></header><div className="body"><span className="num text-[22px] md:text-[40px]">Searching<span className="blink">…</span></span></div></div>}
         </div>
 
@@ -340,12 +349,13 @@ export function Play({ stake }: { stake: bigint }) {
           <div className="panel hidden md:flex">
             <header><span className="label">Stakes</span><span className="code">one atomic tx</span></header>
             <div className="body"><div className="kv">
+              <span>Mode</span><span>{MODE_LABEL[mode]}</span>
               <span>Stake each</span><span>{sol(stake, 2)} SOL</span>
               <span>Pot</span><span>{sol(stake * 2n, 2)} SOL</span>
               <span>Gas deposit (refunded)</span><span>{sol(gas, 3)} SOL</span>
             </div></div>
           </div>
-          <span className="label text-center md:hidden">Stake {sol(stake, 2)} · pot {sol(stake * 2n, 2)} · gas deposit {sol(gas, 3)} (refunded)</span>
+          <span className="label text-center md:hidden">{MODE_LABEL[mode]} · stake {sol(stake, 2)} · pot {sol(stake * 2n, 2)} · gas deposit {sol(gas, 3)} (refunded)</span>
           <div className="panel">
             <header><span className="label">Signatures</span><span className="code">{pairing ? `${left} s left` : '—'}</span></header>
             <div className="body">
@@ -374,11 +384,14 @@ const OUT_TEXT = {
   joining: { title: 'Sign to join', text: 'Approve the message in your wallet. It proves this queue entry is yours. No fee.', action: null },
   sign: { title: 'Not in the queue', text: 'The queue entry needs your wallet signature. No fee.', action: 'Sign & join' },
   away: { title: 'Still there?', text: "You missed your turn to sign, so you're out of the queue.", action: "I'm back" },
-  duplicate: { title: 'Already queued', text: 'This wallet is already waiting in another tab or on another device. Close it to play here.', action: 'Try again' },
+  duplicate: { title: 'Already queued', text: 'This wallet is already waiting in another tab or on another device. Leave that queue to play here.', action: 'Try again' },
 } as const
 
-function OutPanel({ out, onJoin }: { out: keyof typeof OUT_TEXT; onJoin: () => void }) {
-  const { title, text, action } = OUT_TEXT[out]
+function OutPanel({ out, other, onJoin }: { out: keyof typeof OUT_TEXT; other: Peer | null; onJoin: () => void }) {
+  const { title, action } = OUT_TEXT[out]
+  const text = out === 'duplicate' && other
+    ? `This wallet is already waiting at ${sol(BigInt(other.stake), 2)} SOL (${MODE_LABEL[other.mode ?? 'timed']}) in another tab or on another device. One queue at a time: leave that one to play here.`
+    : OUT_TEXT[out].text
   return (
     <div className="panel">
       <header><span className="label">Opponent</span><span className="code">{out === 'joining' ? 'waiting for wallet' : 'not queued'}</span></header>
