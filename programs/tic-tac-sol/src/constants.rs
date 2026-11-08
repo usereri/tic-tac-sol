@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
 
 #[constant]
-pub const CONFIG_SEED: &[u8] = b"config";
+pub const CONFIG_SEED: &[u8] = b"config_v2";
 
 #[constant]
-pub const JACKPOT_SEED: &[u8] = b"jackpot";
+pub const JACKPOT_SEED: &[u8] = b"jackpot_v2";
 
 #[constant]
 pub const GAME_SEED: &[u8] = b"game";
@@ -24,6 +24,9 @@ pub const TURN_MIN_SLOTS: u64 = 12;
 /// Extra slots (~10 s) for the first move only: X learns the game started a few seconds after the
 /// start transaction lands (O confirms it, then tells X), and the clock is already running by then.
 pub const START_GRACE_SLOTS: u64 = 25;
+
+/// The SlotHashes sysvar.
+pub const SLOT_HASHES_ID: Pubkey = pubkey!("SysvarS1otHashes111111111111111111111111111");
 
 /// Wallets kept on the on-chain leaderboard.
 pub const BOARD_SIZE: usize = 50;

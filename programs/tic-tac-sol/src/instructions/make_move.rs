@@ -27,19 +27,36 @@ pub struct PlayGame<'info> {
     pub active_o: UncheckedAccount<'info>,
     #[account(mut, seeds = [LEADERBOARD_SEED], bump = leaderboard.bump)]
     pub leaderboard: Box<Account<'info, Leaderboard>>,
+    /// CHECK: the SlotHashes sysvar, randomness for the jackpot draw.
+    #[account(address = SLOT_HASHES_ID)]
+    pub slot_hashes: UncheckedAccount<'info>,
 }
 
 impl<'info> PlayGame<'info> {
+    /// Last slot the player to move may act in. A relaxed game has one deadline for the whole game.
     pub fn deadline(&self) -> Result<u64> {
-        let grace = if self.game.move_count == 0 { START_GRACE_SLOTS } else { 0 };
-        self.game
-            .last_action_slot
-            .checked_add(turn_slots_at(
-                self.config.args.turn_slots,
-                self.game.last_action_slot.saturating_sub(self.game.started_slot),
-            ))
-            .and_then(|d| d.checked_add(grace))
-            .ok_or(error!(ErrorCode::MathOverflow))
+        let game = &self.game;
+        let deadline = match game.mode {
+            GameMode::Relaxed => game.started_slot.checked_add(self.config.args.relaxed_slots),
+            GameMode::Timed => {
+                let grace = if game.move_count == 0 { START_GRACE_SLOTS } else { 0 };
+                let elapsed = game.last_action_slot.saturating_sub(game.started_slot);
+                game.last_action_slot
+                    .checked_add(turn_slots_at(self.config.args.turn_slots, elapsed))
+                    .and_then(|d| d.checked_add(grace))
+            }
+        };
+        deadline.ok_or(error!(ErrorCode::MathOverflow))
+    }
+
+    /// After this slot anyone may settle 50/50: right after a relaxed game runs out, or once a
+    /// timed game's claim window has passed.
+    pub fn abandoned_after(&self) -> Result<u64> {
+        let deadline = self.deadline()?;
+        Ok(match self.game.mode {
+            GameMode::Relaxed => deadline,
+            GameMode::Timed => deadline.saturating_add(self.config.args.abandon_slots),
+        })
     }
 
     pub fn refund_signer(&mut self) -> Result<()> {
@@ -58,6 +75,8 @@ impl<'info> PlayGame<'info> {
             &mut self.jackpot,
             [&self.active_x.to_account_info(), &self.active_o.to_account_info()],
             &mut self.leaderboard,
+            &self.slot_hashes.to_account_info(),
+            &self.config.args,
             status,
             winner,
         )

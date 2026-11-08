@@ -3,7 +3,7 @@ use anchor_lang::{
     system_program::{transfer, Transfer},
 };
 
-use crate::{constants::*, error::ErrorCode, escrow::*, state::*};
+use crate::{constants::*, error::ErrorCode, state::*};
 
 /// Signed by both players' wallets in one transaction, so either both stakes
 /// go in and the game starts, or nobody pays anything.
@@ -23,8 +23,6 @@ pub struct StartGame<'info> {
     pub session_o: UncheckedAccount<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
-    #[account(mut, seeds = [JACKPOT_SEED], bump = jackpot.bump)]
-    pub jackpot: Account<'info, Jackpot>,
     #[account(
         init,
         payer = player_x,
@@ -62,7 +60,7 @@ impl<'info> StartGame<'info> {
     }
 }
 
-pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Result<()> {
+pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64, mode: GameMode) -> Result<()> {
     let a = &ctx.accounts;
     let keys = [
         a.player_x.key(),
@@ -87,24 +85,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
     a.pay(a.player_x.to_account_info(), a.session_x.to_account_info(), args.gas_deposit)?;
     a.pay(a.player_o.to_account_info(), a.session_o.to_account_info(), args.gas_deposit)?;
 
-    // Direct lamport moves only after all CPIs.
-    let jackpot = &mut ctx.accounts.jackpot;
-    let mut jackpot_bonus = 0;
-    if jackpot.drained_count >= args.jackpot_every {
-        let jackpot_info = jackpot.to_account_info();
-        jackpot_bonus = spare_lamports(&jackpot_info)?;
-        move_lamports(&jackpot_info, &game_info, jackpot_bonus)?;
-        jackpot.drained_count = 0;
-        jackpot.total_paid_out = jackpot
-            .total_paid_out
-            .checked_add(jackpot_bonus)
-            .ok_or(ErrorCode::MathOverflow)?;
-    }
-
-    let initial_pot = stake
-        .checked_mul(2)
-        .and_then(|p| p.checked_add(jackpot_bonus))
-        .ok_or(ErrorCode::MathOverflow)?;
+    let initial_pot = stake.checked_mul(2).ok_or(ErrorCode::MathOverflow)?;
 
     let game_key = ctx.accounts.game.key();
     for active in [&mut ctx.accounts.active_x, &mut ctx.accounts.active_o] {
@@ -119,6 +100,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         session_x: keys[2],
         session_o: keys[3],
         status: GameStatus::Active,
+        mode,
         turn: X,
         winner: EMPTY,
         board: [EMPTY; 9],
@@ -131,8 +113,9 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         move_count: 0,
         initial_pot,
         stake,
-        jackpot_bonus,
         fees_paid: 0,
+        raked: 0,
+        jackpot_won: 0,
         last_action_slot: Clock::get()?.slot,
         started_slot: Clock::get()?.slot,
         nonce,
@@ -144,7 +127,7 @@ pub fn handle_start_game(ctx: Context<StartGame>, nonce: u64, stake: u64) -> Res
         player_x: keys[0],
         player_o: keys[1],
         pot: initial_pot,
-        jackpot_bonus,
+        mode,
     });
     Ok(())
 }

@@ -4,7 +4,7 @@ use crate::{constants::*, error::ErrorCode, instructions::PlayGame, state::*};
 
 /// The waiting player claims after the opponent missed the deadline. Signing proves
 /// they're still there. If the idle player had moved before, the claimer wins;
-/// if the idle player never moved, the pot is split.
+/// if the idle player never moved, or the relaxed game simply ran out, the pot is split.
 pub fn handle_claim_timeout(ctx: Context<PlayGame>) -> Result<()> {
     let a = ctx.accounts;
     let slot = Clock::get()?.slot;
@@ -26,22 +26,22 @@ pub fn handle_claim_timeout(ctx: Context<PlayGame>) -> Result<()> {
     );
 
     a.refund_signer()?;
-    if a.game.has_moved(idle) {
+    if a.game.mode == GameMode::Timed && a.game.has_moved(idle) {
         a.finish(GameStatus::WonByTimeout, claimer)
     } else {
         a.finish(GameStatus::Split, EMPTY)
     }
 }
 
-/// Nobody claimed within the claim window: both players left. Anyone can settle 50/50
-/// and gets their tx fee back from the escrow.
+/// Nobody claimed within the claim window (both players left), or a relaxed game ran out.
+/// Anyone can settle 50/50 and gets their tx fee back from the escrow.
 pub fn handle_settle_abandoned(ctx: Context<PlayGame>) -> Result<()> {
     let a = ctx.accounts;
     let slot = Clock::get()?.slot;
 
     require!(a.game.status == GameStatus::Active, ErrorCode::GameNotActive);
     require!(
-        slot > a.deadline()?.saturating_add(a.config.args.abandon_slots),
+        slot > a.abandoned_after()?,
         ErrorCode::NotAbandoned
     );
 

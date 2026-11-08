@@ -18,8 +18,14 @@ pub struct Settings {
     pub abandon_slots: u64,
     /// The game ends as drained once the pot falls below this share of the initial pot.
     pub drain_floor_bps: u16,
-    /// The jackpot is added to the next game after this many drained games.
-    pub jackpot_every: u8,
+    /// Share of every pot that goes to the jackpot when the game ends.
+    pub rake_bps: u16,
+    /// Once the jackpot holds this many lamports, a draw starts...
+    pub draw_threshold: u64,
+    /// ...and one of the next `draw_games` games to finish wins it, picked at random.
+    pub draw_games: u8,
+    /// Length of a relaxed game: no turn clock; when it runs out, anyone settles it 50/50.
+    pub relaxed_slots: u64,
 }
 
 #[account]
@@ -33,9 +39,12 @@ pub struct Config {
 #[account]
 #[derive(InitSpace)]
 pub struct Jackpot {
-    /// Drained games that contributed since the last payout.
-    pub drained_count: u8,
+    /// Games left in the running draw; 0 while no draw runs.
+    pub draw_left: u8,
     pub total_paid_out: u64,
+    /// The last game that won the jackpot, and what it won.
+    pub last_game: Pubkey,
+    pub last_win: u64,
     pub bump: u8,
 }
 
@@ -119,6 +128,14 @@ pub enum GameStatus {
     Split,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
+pub enum GameMode {
+    /// A speeding-up clock per turn; a player who misses it loses (or splits if they never moved).
+    Timed,
+    /// No turn clock. The whole game has `relaxed_slots`; when they run out, anyone settles 50/50.
+    Relaxed,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Game {
@@ -127,6 +144,7 @@ pub struct Game {
     pub session_x: Pubkey,
     pub session_o: Pubkey,
     pub status: GameStatus,
+    pub mode: GameMode,
     /// `X` or `O`.
     pub turn: u8,
     /// `X`, `O`, or `EMPTY` when there is no winner.
@@ -143,8 +161,11 @@ pub struct Game {
     pub initial_pot: u64,
     /// Lamports each player staked, chosen by the players within the config limits.
     pub stake: u64,
-    pub jackpot_bonus: u64,
     pub fees_paid: u64,
+    /// Lamports of the pot that went to the jackpot when the game ended.
+    pub raked: u64,
+    /// Jackpot lamports this game won in a draw, paid on top of the pot.
+    pub jackpot_won: u64,
     pub last_action_slot: u64,
     /// Slot the game started in; drives the speeding-up turn clock.
     pub started_slot: u64,
@@ -240,7 +261,7 @@ pub struct GameStarted {
     pub player_x: Pubkey,
     pub player_o: Pubkey,
     pub pot: u64,
-    pub jackpot_bonus: u64,
+    pub mode: GameMode,
 }
 
 #[event]
@@ -261,6 +282,7 @@ pub struct GameEnded {
     pub to_x: u64,
     pub to_o: u64,
     pub to_jackpot: u64,
+    pub jackpot_won: u64,
     pub fees_paid: u64,
     pub move_count: u32,
 }

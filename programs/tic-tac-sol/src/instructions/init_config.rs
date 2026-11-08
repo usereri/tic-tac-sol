@@ -10,6 +10,16 @@ pub struct InitConfig<'info> {
     pub config: Account<'info, Config>,
     #[account(init, payer = admin, space = 8 + Jackpot::INIT_SPACE, seeds = [JACKPOT_SEED], bump)]
     pub jackpot: Account<'info, Jackpot>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Separate from the config so the standings survive a new config version.
+#[derive(Accounts)]
+pub struct InitLeaderboard<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump, has_one = admin @ ErrorCode::Unauthorized)]
+    pub config: Account<'info, Config>,
     #[account(init, payer = admin, space = 8 + Leaderboard::INIT_SPACE, seeds = [LEADERBOARD_SEED], bump)]
     pub leaderboard: Box<Account<'info, Leaderboard>>,
     pub system_program: Program<'info, System>,
@@ -33,7 +43,9 @@ pub fn validate(args: &Settings) -> Result<()> {
         (args.drain_floor_bps as u64) < BPS_DENOMINATOR,
         ErrorCode::InvalidConfig
     );
-    require!(args.jackpot_every > 0, ErrorCode::InvalidConfig);
+    require!((args.rake_bps as u64) < BPS_DENOMINATOR, ErrorCode::InvalidConfig);
+    require!(args.draw_games > 0, ErrorCode::InvalidConfig);
+    require!(args.relaxed_slots > 0, ErrorCode::InvalidConfig);
     Ok(())
 }
 
@@ -45,10 +57,16 @@ pub fn handle_init_config(ctx: Context<InitConfig>, args: Settings) -> Result<()
         bump: ctx.bumps.config,
     });
     ctx.accounts.jackpot.set_inner(Jackpot {
-        drained_count: 0,
+        draw_left: 0,
         total_paid_out: 0,
+        last_game: Pubkey::default(),
+        last_win: 0,
         bump: ctx.bumps.jackpot,
     });
+    Ok(())
+}
+
+pub fn handle_init_leaderboard(ctx: Context<InitLeaderboard>) -> Result<()> {
     ctx.accounts.leaderboard.len = 0;
     ctx.accounts.leaderboard.bump = ctx.bumps.leaderboard;
     Ok(())
